@@ -86,7 +86,7 @@ const toRecord = (items: LineItem[]): Record<string, number> =>
 const empty: EmployeeFormValues = {
   full_name: "", email: "", phone: "",
   id_number: "", kra_pin: "", nssf_number: "", nhif_number: "",
-  basic_salary: 0,
+  basic_salary: "",
   allowances_json: "{}", deductions_json: "{}",
   payment_method: "M-Pesa", mpesa_number: "",
   bank_account: "", department: "", position: "",
@@ -113,7 +113,7 @@ export const EmployeeFormDialog = ({ open, onOpenChange, employee, onSaved }: Pr
       kra_pin: employee.kra_pin ?? "",
       nssf_number: employee.nssf_number ?? "",
       nhif_number: employee.nhif_number ?? "",
-      basic_salary: employee.basic_salary ?? 0,
+      basic_salary: employee.basic_salary != null ? String(employee.basic_salary) : "",
       allowances_json: JSON.stringify(employee.allowances ?? {}),
       deductions_json: JSON.stringify(employee.deductions ?? {}),
       payment_method: employee.payment_method ?? "M-Pesa",
@@ -178,7 +178,7 @@ export const EmployeeFormDialog = ({ open, onOpenChange, employee, onSaved }: Pr
 
     if (error) {
       let msg = "Something went wrong. Please try again.";
-      if (error.message.includes("phone")) msg = "Please check the phone number format (+254XXXXXXXXX).";
+      if (error.message.includes("phone")) msg = "Please check the phone number (+254XXXXXXXXX).";
       if (error.message.includes("salary") || error.message.includes("numeric"))
         msg = "Please enter a valid salary amount.";
       if (error.message.includes("duplicate") || error.message.includes("unique"))
@@ -245,8 +245,13 @@ export const EmployeeFormDialog = ({ open, onOpenChange, employee, onSaved }: Pr
 
             <TabsContent value="compensation" className="space-y-4 pt-3">
               <Field label="Basic salary (KES)" required error={errors.basic_salary?.message}>
-                <Input type="number" step="1" min="0"
-                  placeholder="e.g. 50000" {...register("basic_salary", { valueAsNumber: true })} />
+                <Input
+                  type="number"
+                  step="1"
+                  min="0"
+                  placeholder="e.g. 50000"
+                  {...register("basic_salary")}
+                />
               </Field>
               <LineItemEditor title="Allowances" items={allowances} onChange={setAllowances} />
               <LineItemEditor title="Deductions" items={deductions} onChange={setDeductions} />

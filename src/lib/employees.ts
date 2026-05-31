@@ -42,33 +42,32 @@ export const parseJsonObject = (v: string | undefined): Record<string, number> =
 export const employeeFormSchema = z
   .object({
     full_name: z.string().trim().min(1, "Full name is required").max(120),
-    email: z.string().trim().email("Invalid email address").max(255).optional().or(z.literal("")),
-    phone: z
-      .string()
-      .trim()
-      .regex(phoneRegex, "Phone must be in format +254XXXXXXXXX"),
+    email: z.string().trim().email("Invalid email").max(255).optional().or(z.literal("")),
+    phone: z.string().trim().regex(phoneRegex, "Phone must be +254XXXXXXXXX"),
     id_number: z.string().trim().max(50).optional().or(z.literal("")),
     kra_pin: z.string().trim().max(50).optional().or(z.literal("")),
     nssf_number: z.string().trim().max(50).optional().or(z.literal("")),
     nhif_number: z.string().trim().max(50).optional().or(z.literal("")),
-
-    basic_salary: z.coerce
-      .number({ invalid_type_error: "Please enter a valid salary amount" })
-      .min(0, "Salary cannot be negative"),
-
+    basic_salary: z.string().min(1, "Please enter a salary amount"),
     allowances_json: z.string().optional().or(z.literal("")),
     deductions_json: z.string().optional().or(z.literal("")),
-
     payment_method: z.enum(["M-Pesa", "Bank", "Cash"]),
     mpesa_number: z.string().trim().optional().or(z.literal("")),
     bank_account: z.string().trim().max(50).optional().or(z.literal("")),
-
     department: z.string().trim().max(80).optional().or(z.literal("")),
     position: z.string().trim().max(80).optional().or(z.literal("")),
     hire_date: z.string().optional().or(z.literal("")),
     status: z.enum(["active", "on_leave", "terminated"]),
   })
   .superRefine((data, ctx) => {
+    const salary = Number(data.basic_salary);
+    if (isNaN(salary) || salary < 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["basic_salary"],
+        message: "Please enter a valid salary amount",
+      });
+    }
     if (data.payment_method === "M-Pesa") {
       if (!data.mpesa_number || !phoneRegex.test(data.mpesa_number)) {
         ctx.addIssue({
@@ -89,14 +88,10 @@ export const employeeFormSchema = z
     }
   });
 
-export type EmployeeFormValues = z.input<typeof employeeFormSchema>;
-export type EmployeeFormParsed = z.output<typeof employeeFormSchema>;
+export type EmployeeFormValues = z.infer<typeof employeeFormSchema>;
 
 export const fmtKES = (n: number | null | undefined) =>
-  "KES " +
-  new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(
-    Number(n ?? 0),
-  );
+  "KES " + new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(Number(n ?? 0));
 
 export const employeeStatusLabel = (s: EmployeeStatus) =>
   s === "active" ? "Active" : s === "on_leave" ? "On Leave" : "Terminated";
