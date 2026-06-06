@@ -8,7 +8,6 @@ import { supabase } from "@/lib/supabase";
 
 type Msg = { role: "user" | "bot"; text: string };
 
-// Fetch this user's actual business data to give Claude real context
 async function fetchBusinessContext(businessId: string) {
   const [txRes, empRes, assetRes, liabRes, schedRes] = await Promise.all([
     supabase
@@ -16,7 +15,7 @@ async function fetchBusinessContext(businessId: string) {
       .select("txn_date,narration,amount,txn_type,category,status")
       .eq("business_id", businessId)
       .order("txn_date", { ascending: false })
-      .limit(30),
+      .limit(50),
     supabase
       .from("employees")
       .select("full_name,position,basic_salary,status,department")
@@ -41,67 +40,117 @@ async function fetchBusinessContext(businessId: string) {
   const liabilities = liabRes.data ?? [];
   const scheduled = schedRes.data ?? [];
 
+  // Overall totals
   const totalIncome = transactions
     .filter((t) => t.txn_type === "Income" && t.status === "Approved")
     .reduce((s, t) => s + Number(t.amount), 0);
-
   const totalExpenses = transactions
     .filter((t) => t.txn_type === "Expense" && t.status === "Approved")
     .reduce((s, t) => s + Number(t.amount), 0);
 
+  // Monthly breakdowns for accurate VAT calculations
+  const now = new Date();
+  const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
+
+  const monthlyData = (monthKey: string) => {
+    const txns = transactions.filter(
+      (t) => t.txn_date?.startsWith(monthKey) && t.status === "Approved"
+    );
+    const income = txns.filter((t) => t.txn_type === "Income").reduce((s, t) => s + Number(t.amount), 0);
+    const expenses = txns.filter((t) => t.txn_type === "Expense").reduce((s, t) => s + Number(t.amount), 0);
+    const outputVat = Math.round((income / 1.16) * 0.16);
+    const inputVat = Math.round((expenses / 1.16) * 0.16);
+    const netVat = Math.max(0, outputVat - inputVat);
+    return { income, expenses, outputVat, inputVat, netVat };
+  };
+
+  const thisMonth = monthlyData(thisMonthKey);
+  const lastMonth = monthlyData(lastMonthKey);
+
+  // Payroll from employee records (authoritative source)
+  const activeEmployees = employees.filter((e) => e.status === "active");
+  const monthlyPayroll = activeEmployees.reduce((s, e) => s + Number(e.basic_salary), 0);
+
+  // Assets & liabilities
   const totalAssets = assets.reduce((s, a) => s + Number(a.value), 0);
   const totalLiabilities = liabilities.reduce((s, l) => s + Number(l.value), 0);
-  const monthlyPayroll = employees
-    .filter((e) => e.status === "active")
-    .reduce((s, e) => s + Number(e.basic_salary), 0);
+
+  // Scheduled expenses
+  const activeScheduled = scheduled.filter((s) => s.status === "active");
+  const monthlyScheduled = activeScheduled.reduce((s, e) => s + Number(e.amount), 0);
 
   return `
-LIVE BUSINESS DATA (use these exact numbers when answering):
-- Total income (last 30 transactions): KES ${totalIncome.toLocaleString()}
-- Total expenses (last 30 transactions): KES ${totalExpenses.toLocaleString()}
-- Net position: KES ${(totalIncome - totalExpenses).toLocaleString()}
-- Total assets: KES ${totalAssets.toLocaleString()}
-- Total liabilities: KES ${totalLiabilities.toLocaleString()}
-- Net worth: KES ${(totalAssets - totalLiabilities).toLocaleString()}
-- Active employees: ${employees.filter((e) => e.status === "active").length}
-- Monthly payroll: KES ${monthlyPayroll.toLocaleString()}
-- Scheduled expenses: ${scheduled.filter((s) => s.status === "active").length} active
+LIVE BUSINESS DATA — use ONLY these exact numbers. Never mix data from other businesses.
 
-Recent transactions (last 10):
-${transactions.slice(0, 10).map((t) => `  - ${t.txn_date} | ${t.txn_type} | ${t.narration ?? t.category} | KES ${Number(t.amount).toLocaleString()}`).join("\n") || "  No transactions yet"}
+═══ OVERALL SUMMARY (all loaded transactions) ═══
+Total income: KES ${totalIncome.toLocaleString()}
+Total expenses: KES ${totalExpenses.toLocaleString()}
+Net profit: KES ${(totalIncome - totalExpenses).toLocaleString()}
 
-Employees:
-${employees.length > 0 ? employees.map((e) => `  - ${e.full_name} (${e.position ?? "Staff"}) — KES ${Number(e.basic_salary).toLocaleString()}/month — ${e.status}`).join("\n") : "  No employees yet"}
+═══ ${thisMonthKey} (THIS MONTH) ═══
+Income: KES ${thisMonth.income.toLocaleString()}
+Expenses: KES ${thisMonth.expenses.toLocaleString()}
+Net: KES ${(thisMonth.income - thisMonth.expenses).toLocaleString()}
+Output VAT (sales ÷ 1.16 × 16%): KES ${thisMonth.outputVat.toLocaleString()}
+Input VAT (purchases ÷ 1.16 × 16%): KES ${thisMonth.inputVat.toLocaleString()}
+Net VAT payable: KES ${thisMonth.netVat.toLocaleString()}
+
+═══ ${lastMonthKey} (LAST MONTH) ═══
+Income: KES ${lastMonth.income.toLocaleString()}
+Expenses: KES ${lastMonth.expenses.toLocaleString()}
+Net: KES ${(lastMonth.income - lastMonth.expenses).toLocaleString()}
+Output VAT (sales ÷ 1.16 × 16%): KES ${lastMonth.outputVat.toLocaleString()}
+Input VAT (purchases ÷ 1.16 × 16%): KES ${lastMonth.inputVat.toLocaleString()}
+Net VAT payable: KES ${lastMonth.netVat.toLocaleString()}
+
+═══ PAYROLL (always use employee records for payroll — NOT salary transactions) ═══
+Active employees: ${activeEmployees.length}
+Monthly payroll total: KES ${monthlyPayroll.toLocaleString()}
+${activeEmployees.map((e) => `  • ${e.full_name} (${e.position ?? "Staff"}, ${e.department ?? "—"}): KES ${Number(e.basic_salary).toLocaleString()}/month`).join("\n") || "  No active employees"}
+
+═══ BALANCE SHEET ═══
+Total assets: KES ${totalAssets.toLocaleString()}
+Total liabilities: KES ${totalLiabilities.toLocaleString()}
+Net worth: KES ${(totalAssets - totalLiabilities).toLocaleString()}
 
 Assets:
-${assets.length > 0 ? assets.map((a) => `  - ${a.name} (${a.category}): KES ${Number(a.value).toLocaleString()}`).join("\n") : "  No assets recorded"}
+${assets.length > 0 ? assets.map((a) => `  • ${a.name} (${a.category}): KES ${Number(a.value).toLocaleString()}`).join("\n") : "  No assets recorded"}
 
 Liabilities:
-${liabilities.length > 0 ? liabilities.map((l) => `  - ${l.name} (${l.category}): KES ${Number(l.value).toLocaleString()}`).join("\n") : "  No liabilities recorded"}
+${liabilities.length > 0 ? liabilities.map((l) => `  • ${l.name} (${l.category}): KES ${Number(l.value).toLocaleString()}`).join("\n") : "  No liabilities recorded"}
 
-Scheduled expenses:
-${scheduled.length > 0 ? scheduled.map((s) => `  - ${s.vendor} (${s.category}): KES ${Number(s.amount).toLocaleString()} ${s.frequency} — due ${s.next_due}`).join("\n") : "  No scheduled expenses"}
+═══ RECURRING BILLS (scheduled expenses) ═══
+Monthly total: KES ${monthlyScheduled.toLocaleString()}
+${activeScheduled.map((s) => `  • ${s.vendor} (${s.category}): KES ${Number(s.amount).toLocaleString()} ${s.frequency} — next due ${s.next_due}`).join("\n") || "  No active scheduled expenses"}
+
+═══ RECENT TRANSACTIONS (last 10) ═══
+${transactions.slice(0, 10).map((t) => `  • ${t.txn_date} | ${t.txn_type} | ${t.narration ?? t.category} | KES ${Number(t.amount).toLocaleString()} | ${t.status}`).join("\n") || "  No transactions yet"}
 `.trim();
 }
 
 const BASE_SYSTEM = `You are BLAVIA's AI financial assistant — a smart, friendly advisor for Kenyan small businesses.
 
-You have access to this specific user's LIVE business data (provided below). Always use their actual numbers when answering. Never mix up data between businesses.
+You have this user's LIVE business data. Always use their exact numbers.
 
-You help with:
-- Analysing their specific income, expenses, cash flow and net profit
-- Kenyan tax guidance: VAT 16%, Corporate Tax 30%, PAYE, NSSF, NHIF/SHIF, WHT, TOT 3%
-- Payroll calculations and KRA compliance using their actual employee salaries
-- Balance sheet interpretation using their real assets and liabilities
-- General business finance advice tailored to their situation
-- How to use BLAVIA features
+CRITICAL RULES:
+1. VAT is MONTHLY — never apply VAT to all-time totals. Use the monthly VAT figures already calculated in the data
+2. Corporate Tax is ANNUAL — 30% of annual net profit, not monthly
+3. For payroll, ALWAYS use the PAYROLL section (from employee records). Never use salary transaction amounts
+4. Always show your calculation working so the user can verify
+5. Use KES for all amounts
+6. KRA deadlines: VAT by 20th of next month, PAYE by 9th of next month
+7. If unsure which month to use for taxes, ask the user
 
-Rules:
-- Always use KES for currency
-- Be concise and practical
-- When doing calculations, show the working
-- If data shows KES 0 everywhere, tell the user to add their transactions first
-- Never reveal data from other businesses`;
+KENYAN TAX RATES:
+- VAT: 16% (output on sales, input on purchases, net = output - input)
+- Corporate Tax: 30% of annual net profit
+- PAYE: graduated (0% up to 24,000 | 25% 24,001–32,333 | 30% 32,334–500,000 | 32.5% above 500,000)
+- NSSF: KES 200 employee + KES 200 employer
+- NHIF/SHIF: 2.75% of gross salary
+- Withholding Tax: 5% on professional fees, 3% on construction
+- Turnover Tax (TOT): 3% for businesses below KES 5M annual revenue`;
 
 export const ChatbotWidget = () => {
   const { profile, business } = useAuth();
@@ -112,13 +161,12 @@ export const ChatbotWidget = () => {
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "bot",
-      text: `Hi${profile?.full_name ? " " + profile.full_name.split(" ")[0] : ""}! 👋 I'm your BLAVIA financial assistant. I can answer questions about your specific business data, taxes, payroll, and more. What would you like to know?`,
+      text: `Hi${profile?.full_name ? " " + profile.full_name.split(" ")[0] : ""}! 👋 I'm your BLAVIA financial assistant powered by GPT-4o. Ask me about your income, expenses, taxes, payroll or anything finance-related!`,
     },
   ]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Load live business data when chat opens
   useEffect(() => {
     if (open && business?.id && !businessContext) {
       fetchBusinessContext(business.id).then(setBusinessContext);
@@ -141,7 +189,6 @@ export const ChatbotWidget = () => {
     setSending(true);
 
     try {
-      // Refresh business context on every send to keep data current
       let ctx = businessContext;
       if (business?.id) {
         ctx = await fetchBusinessContext(business.id);
@@ -156,36 +203,41 @@ VAT registered: ${business?.vat_registered ? "Yes" : "No"}
 
 ${ctx}`;
 
-      const history = messages
-        .slice(-8)
-        .map((m) => ({
-          role: m.role === "user" ? "user" : "assistant",
-          content: m.text,
-        }));
+      const history = messages.slice(-8).map((m) => ({
+        role: m.role === "user" ? "user" : "assistant",
+        content: m.text,
+      }));
 
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
+        },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "gpt-4o",
           max_tokens: 1000,
-          system: systemPrompt,
-          messages: [...history, { role: "user", content: text }],
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...history,
+            { role: "user", content: text },
+          ],
         }),
       });
 
       const data = await res.json();
-      const reply =
-        data.content?.[0]?.text ??
+      if (data.error) throw new Error(data.error.message);
+      const reply = data.choices?.[0]?.message?.content ??
         "Sorry, I couldn't get a response. Please try again.";
-
       setMessages((m) => [...m, { role: "bot", text: reply }]);
-    } catch {
+    } catch (err: any) {
       setMessages((m) => [
         ...m,
         {
           role: "bot",
-          text: "Sorry, I'm having trouble connecting right now. Please try again in a moment.",
+          text: err?.message?.includes("API key")
+            ? "⚠️ OpenAI API key not configured. Add VITE_OPENAI_API_KEY to your .env file."
+            : "Sorry, I'm having trouble connecting right now. Please try again.",
         },
       ]);
     } finally {
@@ -195,11 +247,11 @@ ${ctx}`;
 
   const suggestions = [
     "What is my net profit?",
-    "Calculate PAYE for KES 80,000",
-    "Am I profitable this month?",
+    "What VAT do I owe this month?",
+    "Calculate PAYE for KES 45,000",
+    "How much is my monthly payroll?",
     "What taxes do I owe?",
     "Explain my balance sheet",
-    "How much is my monthly payroll?",
   ];
 
   return (
@@ -230,32 +282,27 @@ ${ctx}`;
                 BLAVIA Assistant
               </p>
               <p className="text-xs text-primary-foreground/70">
-                {business?.business_name ?? "Your business"} · Powered by Claude AI
+                {business?.business_name ?? "Your business"} · Powered by GPT-4o
               </p>
             </div>
-            <button onClick={() => setOpen(false)} className="text-primary-foreground/70 hover:text-primary-foreground">
+            <button
+              onClick={() => setOpen(false)}
+              className="text-primary-foreground/70 hover:text-primary-foreground"
+            >
               <X className="h-4 w-4" />
             </button>
           </div>
 
           {/* Messages */}
-          <div
-            ref={scrollRef}
-            className="flex max-h-[400px] flex-col gap-3 overflow-y-auto p-4"
-          >
+          <div ref={scrollRef} className="flex max-h-[400px] flex-col gap-3 overflow-y-auto p-4">
             {messages.map((m, i) => (
-              <div
-                key={i}
-                className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}
-              >
-                <div
-                  className={cn(
-                    "max-w-[88%] rounded-2xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap",
-                    m.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-br-sm"
-                      : "bg-muted text-foreground rounded-bl-sm"
-                  )}
-                >
+              <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
+                <div className={cn(
+                  "max-w-[88%] rounded-2xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap",
+                  m.role === "user"
+                    ? "bg-primary text-primary-foreground rounded-br-sm"
+                    : "bg-muted text-foreground rounded-bl-sm"
+                )}>
                   {m.text}
                 </div>
               </div>

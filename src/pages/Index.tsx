@@ -1,200 +1,269 @@
-import { useAuth } from "@/contexts/AuthContext";
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { DollarSign, CreditCard, Wallet, Receipt } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  CalendarDays,
+  ClipboardCheck,
+  Download,
+  Filter,
+  Search,
+  TrendingUp,
+} from "lucide-react";
+import { supabase, Transaction } from "@/lib/supabase";
+import { KpiCard } from "@/components/dashboard/KpiCard";
+import { TransactionsTable } from "@/components/dashboard/TransactionsTable";
+import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
+import {
+  FinancialReportsCard,
+  LivePaymentTrackingCard,
+  TaxOverviewCard,
+  PayrollQuickActionsCard,
+} from "@/components/dashboard/DashboardSections";
+import { TaxObligationsCard } from "@/components/dashboard/TaxObligationsCard";
+import { ChatbotWidget } from "@/components/dashboard/ChatbotWidget";
 import { AppShell } from "@/components/AppShell";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
-export default function Index() {
-  const { user, profile, business, refreshProfile } = useAuth();
+const APPROVED_STATUSES = ["Approved", "Auto-Approved"];
+
+const fmtCurrency = (n: number) =>
+  "KES " +
+  new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(n ?? 0);
+
+const Index = () => {
+  const { user, profile } = useAuth();
+  const greetingName =
+    profile?.full_name?.split(" ")[0] ??
+    (user?.user_metadata?.full_name as string | undefined)?.split(" ")[0] ??
+    profile?.company_name ??
+    "there";
+
+  const [allTxns, setAllTxns] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
-    totalRevenue: 0,
-    totalExpenses: 0,
-    netProfit: 0,
-    pendingInvoices: 0
-  });
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
-    console.log("Dashboard mounted, loading data...");
-    loadDashboardData();
-  }, []);
+    if (!profile?.business_id) return;
 
-  const loadDashboardData = async () => {
-    console.log("🔄 Starting dashboard load for user:", user?.email);
-    
-    const timeoutId = setTimeout(() => {
-      console.warn("⚠️ Dashboard load timeout - forcing completion");
-      setLoading(false);
-    }, 5000);
+    const load = async () => {
+      console.log("Dashboard loading for business:", profile.business_id);
+      setLoading(true);
 
-    try {
-      const userEmail = user?.email || '';
-      console.log("📧 Fetching data for email:", userEmail);
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("*")
+        .eq("business_id", profile.business_id)
+        .order("created_at", { ascending: false });
 
-      // Fetch transactions filtered by user email
-      const { data: transactions, error: txnError } = await supabase
-        .from('transactions')
-        .select('*')
-        .or(`created_by_email.eq.${userEmail},business_id.in.(select(id).from(businesses).where(owner_email.eq.${userEmail}))`)
-        .limit(10);
-
-      if (txnError) {
-        console.error("❌ Transaction error:", txnError);
+      if (error) {
+        console.error("transactions error:", error);
+        toast({
+          title: "Couldn't load transactions",
+          description: error.message,
+          variant: "destructive",
+        });
       } else {
-        console.log("✅ Transactions fetched:", transactions?.length);
+        setAllTxns((data ?? []) as Transaction[]);
       }
-
-      // Fetch payments filtered by user email
-      const { data: payments, error: payError } = await supabase
-        .from('payments')
-        .select('*')
-        .or(`created_by_email.eq.${userEmail},business_id.in.(select(id).from(businesses).where(owner_email.eq.${userEmail}))`)
-        .limit(5);
-
-      if (payError) {
-        console.error("❌ Payment error:", payError);
-      } else {
-        console.log("✅ Payments fetched:", payments?.length);
-      }
-
-      const txnArray = transactions || [];
-      const payArray = payments || [];
-
-      const revenue = txnArray
-        .filter((t: any) => t.txn_type === 'Income')
-        .reduce((sum: number, t: any) => sum + (parseFloat(t.amount) || 0), 0);
-        
-      const expenses = txnArray
-        .filter((t: any) => t.txn_type === 'Expense')
-        .reduce((sum: number, t: any) => sum + (parseFloat(t.amount) || 0), 0);
-
-      const pending = payArray.filter((p: any) => p.status === 'pending').length;
-
-      setStats({
-        totalRevenue: revenue,
-        totalExpenses: expenses,
-        netProfit: revenue - expenses,
-        pendingInvoices: pending
-      });
-
-      console.log("✅ Stats calculated:", { revenue, expenses });
-    } catch (err) {
-      console.error("❌ Dashboard error:", err);
-    } finally {
-      console.log("✅ Setting loading to false");
-      clearTimeout(timeoutId);
       setLoading(false);
-    }
-  };
+    };
 
-  const formatCurrency = (amount: number) => {
-    return `KES ${amount.toLocaleString()}`;
-  };
+    load();
+  }, [profile?.business_id]);
 
-  if (loading) {
-    return (
-      <AppShell>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading dashboard...</p>
-          </div>
-        </div>
-      </AppShell>
+  const kpis = useMemo(() => {
+    const now = new Date();
+    const cutoff = new Date(now);
+    cutoff.setDate(cutoff.getDate() - 30);
+    const prevCutoff = new Date(cutoff);
+    prevCutoff.setDate(prevCutoff.getDate() - 30);
+
+    const inWindow = (t: Transaction, from: Date, to: Date) => {
+      const d = new Date(t.txn_date);
+      return !isNaN(d.getTime()) && d >= from && d < to;
+    };
+
+    const approved = allTxns.filter((t) =>
+      APPROVED_STATUSES.includes(t.status)
     );
-  }
+    const sumIncome = (rows: Transaction[]) =>
+      rows
+        .filter((t) => (t.txn_type ?? "").toLowerCase() === "income")
+        .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    const sumExpense = (rows: Transaction[]) =>
+      rows
+        .filter((t) => (t.txn_type ?? "").toLowerCase() === "expense")
+        .reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
+
+    const cur = approved.filter((t) => inWindow(t, cutoff, now));
+    const prev = approved.filter((t) => inWindow(t, prevCutoff, cutoff));
+
+    const income = sumIncome(cur);
+    const expenses = sumExpense(cur);
+    const prevIncome = sumIncome(prev);
+    const prevExpense = sumExpense(prev);
+
+    const pct = (a: number, b: number) =>
+      b === 0 ? (a > 0 ? 100 : 0) : ((a - b) / b) * 100;
+
+    const pendingCount = allTxns.filter(
+      (t) => (t.status ?? "").toLowerCase() === "pending review"
+    ).length;
+
+    return {
+      income,
+      expenses,
+      net: income - expenses,
+      pendingCount,
+      incomeDelta: pct(income, prevIncome),
+      expenseDelta: pct(expenses, prevExpense),
+      netDelta: pct(income - expenses, prevIncome - prevExpense),
+    };
+  }, [allTxns]);
+
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const base = allTxns.slice(0, 50);
+    if (!q) return base;
+    return base.filter((t) =>
+      [t.narration, t.category, t.txn_id, t.ref_number]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q))
+    );
+  }, [allTxns, search]);
 
   return (
     <AppShell>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600 mt-1">Overview of your business performance</p>
-        </div>
+      <div className="space-y-8">
+        {/* Header */}
+        <section className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">
+              Executive Overview
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Welcome back, {greetingName}. Here's what's happening today.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 rounded-lg border-border bg-card"
+            >
+              <CalendarDays className="h-4 w-4" />
+              Last 30 Days
+            </Button>
+            <Button
+              size="sm"
+              className="gap-2 rounded-lg bg-foreground text-background hover:bg-foreground/90"
+            >
+              <Download className="h-4 w-4" />
+              Report
+            </Button>
+          </div>
+        </section>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Total Revenue</CardTitle>
-              <DollarSign className="h-4 w-4 text-emerald-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-emerald-600">
-                {formatCurrency(stats.totalRevenue)}
-              </div>
-            </CardContent>
-          </Card>
+        {/* KPIs */}
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <KpiCard
+            label="Total Inflow"
+            value={fmtCurrency(kpis.income)}
+            icon={ArrowUpRight}
+            tone="success"
+            loading={loading}
+            delta={kpis.incomeDelta}
+          />
+          <KpiCard
+            label="Total Outflow"
+            value={fmtCurrency(kpis.expenses)}
+            icon={ArrowDownLeft}
+            tone="danger"
+            loading={loading}
+            delta={kpis.expenseDelta}
+          />
+          <KpiCard
+            label="Pending Review"
+            value={String(kpis.pendingCount)}
+            icon={ClipboardCheck}
+            tone="warning"
+            loading={loading}
+            hint="Needs attention"
+          />
+          <KpiCard
+            label="Net Profit"
+            value={fmtCurrency(kpis.net)}
+            icon={TrendingUp}
+            tone="navy"
+            loading={loading}
+            delta={kpis.netDelta}
+          />
+        </section>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Total Expenses</CardTitle>
-              <CreditCard className="h-4 w-4 text-red-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">
-                {formatCurrency(stats.totalExpenses)}
-              </div>
-            </CardContent>
-          </Card>
+        {/* Charts */}
+        <section>
+          <DashboardCharts txns={allTxns} />
+        </section>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Net Profit</CardTitle>
-              <Wallet className="h-4 w-4 text-blue-600" />
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${stats.netProfit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                {formatCurrency(stats.netProfit)}
-              </div>
-            </CardContent>
-          </Card>
+        {/* Operations grid */}
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
+          <TaxObligationsCard />
+          <FinancialReportsCard />
+          <LivePaymentTrackingCard txns={allTxns} />
+          <TaxOverviewCard txns={allTxns} />
+          <PayrollQuickActionsCard />
+        </section>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Pending</CardTitle>
-              <Receipt className="h-4 w-4 text-orange-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-600">
-                {stats.pendingInvoices}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Transactions */}
+        <section id="transactions" className="space-y-4 scroll-mt-20">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-foreground">
+              Recent Transactions
+            </h2>
+            <button className="text-sm font-medium text-primary hover:underline">
+              View all
+            </button>
+          </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Business Information</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm text-gray-600">Business Name</p>
-              <p className="font-semibold">{business?.business_name || profile?.company_name || 'Not set'}</p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="relative w-full max-w-md">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search transactions…"
+                className="h-10 rounded-lg border-border bg-card pl-10 text-sm"
+              />
             </div>
-            <div>
-              <p className="text-sm text-gray-600">Owner</p>
-              <p className="font-semibold">{profile?.full_name || user?.user_metadata?.full_name || 'Not set'}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Email</p>
-              <p className="font-semibold">{user?.email || profile?.email || 'Not set'}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Category</p>
-              <p className="font-semibold">{business?.business_category || 'Not set'}</p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 rounded-lg border-border bg-card"
+              >
+                <Filter className="h-4 w-4" />
+                Filters
+              </Button>
+              <Button
+                size="sm"
+                className="gap-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                <Download className="h-4 w-4" />
+                Export CSV
+              </Button>
             </div>
           </div>
-        </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <Button onClick={() => window.location.href = '/payments'} className="h-16">
-            View Payments
-          </Button>
-          <Button onClick={() => window.location.href = '/transactions'} className="h-16" variant="outline">
-            View Transactions
-          </Button>
-        </div>
+          <TransactionsTable rows={filteredRows} loading={loading} />
+        </section>
       </div>
+
+      <ChatbotWidget />
     </AppShell>
   );
-}
+};
+
+export default Index;
