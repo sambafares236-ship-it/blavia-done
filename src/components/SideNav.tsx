@@ -13,6 +13,7 @@ import {
   ArrowUpRight,
   CalendarClock,
   Landmark,
+  FileCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/blavia-logo.png";
@@ -29,6 +30,7 @@ const links = [
   { to: "/tax", label: "Tax Center", icon: Scale },
   { to: "/reports", label: "Financial Reports", icon: FileBarChart2 },
   { to: "/analytics", label: "Analytics", icon: PieChart },
+  { to: "/etims-settings", label: "eTIMS", icon: FileCheck },
 ];
 
 export const SideNav = () => {

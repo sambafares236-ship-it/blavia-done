@@ -18,6 +18,7 @@ import Tax from "./pages/Tax.tsx";
 import BalanceSheet from "./pages/BalanceSheet.tsx";
 import ScheduledExpenses from "./pages/ScheduledExpenses.tsx";
 import Settings from "./pages/Settings.tsx";
+import EtimsSettings from "./pages/EtimsSettings.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -46,6 +47,7 @@ const App = () => (
             <Route path="/balance-sheet" element={<ProtectedRoute><BalanceSheet /></ProtectedRoute>} />
             <Route path="/scheduled-expenses" element={<ProtectedRoute><ScheduledExpenses /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="/etims-settings" element={<ProtectedRoute><EtimsSettings /></ProtectedRoute>} />
 
             {/* Legacy redirects */}
             <Route path="/transactions" element={<Navigate to="/payments" replace />} />
