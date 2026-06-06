@@ -30,13 +30,10 @@ export const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          <div className="text-sm text-muted-foreground">Loading your workspace…</div>
         </div>
       </div>
     );
   }
-
-  console.log("ProtectedRoute: User authenticated, rendering children");
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
