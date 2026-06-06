@@ -58,11 +58,10 @@ export const SideNav = () => {
   return (
     <aside className="hidden w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground md:flex">
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white p-1.5 shadow-sm">
-          <img src={logo} alt="BLAVIA" className="h-full w-full object-contain" />
+      <div className="flex items-center px-4 py-5">
+        <div className="rounded-xl bg-white px-4 py-2 shadow-sm w-full flex items-center justify-center">
+          <img src={logo} alt="BLAVIA" className="h-24 w-auto object-contain" />
         </div>
-        <span className="text-base font-bold tracking-tight text-white">BLAVIA</span>
       </div>
 
       {/* Nav */}

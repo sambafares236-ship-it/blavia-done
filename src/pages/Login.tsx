@@ -26,7 +26,6 @@ const Login = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Attempting login for:", email);
     setSubmitting(true);
 
     try {
@@ -63,9 +62,10 @@ const Login = () => {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-md space-y-8">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-sidebar-primary p-2">
-            <img src={logo} alt="BLAVIA" className="h-full w-full object-contain" />
-          </div>
+
+          {/* Logo — no box, just the image large and clean */}
+          <img src={logo} alt="BLAVIA" className="h-20 w-auto object-contain" />
+
           <h1 className="text-2xl font-bold tracking-tight">Sign in to BLAVIA</h1>
           <p className="text-sm text-muted-foreground">
             Welcome back. Enter your credentials.
