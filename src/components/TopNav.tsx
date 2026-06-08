@@ -16,7 +16,7 @@ export const TopNav = () => {
       <div className="container flex flex-wrap items-center justify-between gap-3 py-4">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-white/10 p-1.5 backdrop-blur-sm">
-            <img src={logo} alt="BLAVIA" className="h-9 w-9 object-contain" />
+           <img src={logo} alt="BLAVIA" className="h-8 w-auto object-contain" />
           </div>
           <div>
             <h1 className="text-lg font-bold tracking-tight md:text-xl">BLAVIA</h1>

@@ -14,6 +14,7 @@ import {
   CalendarClock,
   Landmark,
   FileCheck,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/blavia-logo.png";
@@ -24,6 +25,7 @@ const links = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/executive", label: "Executive BI", icon: Gauge },
   { to: "/payments", label: "Payments", icon: Wallet },
+  { to: "/invoices", label: "Invoices", icon: FileText },
   { to: "/scheduled-expenses", label: "Scheduled Expenses", icon: CalendarClock },
   { to: "/balance-sheet", label: "Assets & Liabilities", icon: Landmark },
   { to: "/payroll", label: "Payroll", icon: Users },
@@ -67,7 +69,7 @@ export const SideNav = () => {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 space-y-1 px-3">
+      <nav className="flex-1 space-y-1 px-3 overflow-y-auto">
         {links.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
