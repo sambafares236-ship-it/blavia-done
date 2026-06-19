@@ -61,15 +61,19 @@ export const SideNav = () => {
 
   return (
     <aside className="hidden w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground md:flex">
-      {/* Logo */}
-      <div className="flex items-center px-4 py-5">
-        <div className="rounded-xl bg-white px-4 py-2 shadow-sm w-full flex items-center justify-center">
-          <img src={logo} alt="BLAVIA" className="h-24 w-auto object-contain" />
-        </div>
+
+      {/* Logo — full width, tall, readable */}
+      <div className="w-full overflow-hidden">
+        <img
+          src={logo}
+          alt="BLAVIA"
+          className="w-full object-cover"
+          style={{ height: '100px' }}
+        />
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 space-y-1 px-3 overflow-y-auto">
+      <nav className="flex-1 space-y-1 px-3 py-3 overflow-y-auto">
         {links.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}

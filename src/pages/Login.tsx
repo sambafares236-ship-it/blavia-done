@@ -9,6 +9,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Eye, EyeOff } from "lucide-react";
 import logo from "@/assets/blavia-logo.png";
 
+const BRAND = "#0d1f2d";
+
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -88,9 +90,18 @@ const Login = () => {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-md space-y-8">
+
+        {/* Logo + Header */}
         <div className="flex flex-col items-center gap-3">
-          <img src={logo} alt="BLAVIA" className="h-20 w-auto object-contain" />
-          <h1 className="text-2xl font-bold tracking-tight">Sign in to BLAVIA</h1>
+          <div
+            className="flex h-20 w-20 items-center justify-center rounded-2xl p-2"
+            style={{ background: BRAND }}
+          >
+            <img src={logo} alt="BLAVIA" className="h-full w-full object-contain" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight" style={{ color: BRAND }}>
+            Sign in to BLAVIA
+          </h1>
           <p className="text-sm text-muted-foreground">
             Welcome back. Enter your credentials.
           </p>
@@ -100,7 +111,8 @@ const Login = () => {
           // ── Login Form ──────────────────────────────────────
           <form
             onSubmit={handleSubmit}
-            className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm"
+            className="space-y-4 rounded-xl border bg-card p-6 shadow-sm"
+            style={{ borderColor: `${BRAND}20` }}
           >
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -121,7 +133,8 @@ const Login = () => {
                 <button
                   type="button"
                   onClick={() => setShowForgot(true)}
-                  className="text-xs text-primary hover:underline"
+                  className="text-xs hover:underline"
+                  style={{ color: BRAND }}
                 >
                   Forgot password?
                 </button>
@@ -142,22 +155,27 @@ const Login = () => {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
 
-            <Button type="submit" className="w-full" disabled={submitting}>
+            <Button
+              type="submit"
+              className="w-full text-white hover:opacity-90"
+              style={{ background: BRAND }}
+              disabled={submitting}
+            >
               {submitting ? "Signing in…" : "Sign in"}
             </Button>
 
             <p className="text-center text-sm text-muted-foreground">
               Don't have an account?{" "}
-              <Link to="/signup" className="font-medium text-primary hover:underline">
+              <Link
+                to="/signup"
+                className="font-medium hover:underline"
+                style={{ color: BRAND }}
+              >
                 Sign up
               </Link>
             </p>
@@ -166,10 +184,13 @@ const Login = () => {
           // ── Forgot Password Form ────────────────────────────
           <form
             onSubmit={handleForgotPassword}
-            className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm"
+            className="space-y-4 rounded-xl border bg-card p-6 shadow-sm"
+            style={{ borderColor: `${BRAND}20` }}
           >
             <div className="space-y-1">
-              <h2 className="text-lg font-semibold">Reset your password</h2>
+              <h2 className="text-lg font-semibold" style={{ color: BRAND }}>
+                Reset your password
+              </h2>
               <p className="text-sm text-muted-foreground">
                 Enter your email and we'll send you a reset link.
               </p>
@@ -187,7 +208,12 @@ const Login = () => {
               />
             </div>
 
-            <Button type="submit" className="w-full" disabled={sendingReset}>
+            <Button
+              type="submit"
+              className="w-full text-white hover:opacity-90"
+              style={{ background: BRAND }}
+              disabled={sendingReset}
+            >
               {sendingReset ? "Sending…" : "Send reset link"}
             </Button>
 
