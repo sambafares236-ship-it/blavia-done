@@ -208,36 +208,20 @@ ${ctx}`;
         content: m.text,
       }));
 
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4o",
-          max_tokens: 1000,
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...history,
-            { role: "user", content: text },
-          ],
-        }),
+      const { data, error } = await supabase.functions.invoke("chat", {
+        body: { systemPrompt, history, message: text },
       });
 
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.message);
-      const reply = data.choices?.[0]?.message?.content ??
-        "Sorry, I couldn't get a response. Please try again.";
+      if (error) throw new Error(error.message);
+
+      const reply = data?.reply ?? "Sorry, I couldn't get a response. Please try again.";
       setMessages((m) => [...m, { role: "bot", text: reply }]);
     } catch (err: any) {
       setMessages((m) => [
         ...m,
         {
           role: "bot",
-          text: err?.message?.includes("API key")
-            ? "⚠️ OpenAI API key not configured. Add VITE_OPENAI_API_KEY to your .env file."
-            : "Sorry, I'm having trouble connecting right now. Please try again.",
+          text: "Sorry, I'm having trouble connecting right now. Please try again.",
         },
       ]);
     } finally {
