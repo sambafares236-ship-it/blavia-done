@@ -1,10 +1,17 @@
-# Dependencies
+﻿# Dependencies
 node_modules/
 
 # Build output
 dist/
 
 # Environment files
+.env
+.env.local
+.env.production
+.env*.local
+
+# Environment files
+.env
 .env.local
 .env.production
 .env*.local
@@ -13,8 +20,6 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Editor settings
-.vscode/
 # Editor settings
 .vscode/
 .vs/
