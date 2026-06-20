@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { PERSONAL_RELIEF, calcTaxable, calcPAYEBeforeRelief } from "@/lib/payeCalculator";
 
 interface Payslip {
   id: string;
@@ -24,6 +25,7 @@ interface Payslip {
   nssf_employee: number | null;
   nhif_employee: number | null;
   housing_levy: number | null;
+  other_deductions: { cotu?: number; welfare?: number } | null;
   paye: number | null;
   total_deductions: number | null;
   net_pay: number | null;
@@ -48,18 +50,6 @@ interface Props {
   employeeId?: string | null;
   onClearFilter?: () => void;
 }
-
-const PERSONAL_RELIEF = 2400;
-
-const calcTaxable = (gross: number, nssf: number) =>
-  Math.max(0, gross - nssf);
-
-const calcPAYEBeforeRelief = (taxable: number) => {
-  if (taxable <= 24000) return taxable * 0.1;
-  if (taxable <= 32333) return 2400 + (taxable - 24000) * 0.25;
-  if (taxable <= 500000) return 2400 + 2083.25 + (taxable - 32333) * 0.3;
-  return 2400 + 2083.25 + 140300.1 + (taxable - 500000) * 0.325;
-};
 
 export const PayslipsSection = ({ employeeId, onClearFilter }: Props) => {
   const [rows, setRows] = useState<Payslip[]>([]);
@@ -110,7 +100,7 @@ export const PayslipsSection = ({ employeeId, onClearFilter }: Props) => {
     const headers = [
       "Employee", "Employee ID", "KRA PIN", "Period Start", "Period End",
       "Basic Salary", "Allowances", "Gross Pay",
-      "NSSF", "Housing Levy", "SHIF", "COTU Fund",
+      "NSSF", "Housing Levy", "SHIF", "COTU Fund", "Staff Welfare",
       "Taxable Income", "PAYE Before Relief", "Tax Relief", "PAYE Payable",
       "Total Deductions", "Net Pay", "Payment Method", "Status"
     ];
@@ -121,9 +111,11 @@ export const PayslipsSection = ({ employeeId, onClearFilter }: Props) => {
       const nssf = Number(r.nssf_employee) || 0;
       const shif = Number(r.nhif_employee) || 0;
       const housing = Number(r.housing_levy) || 0;
-      const taxable = calcTaxable(gross, nssf);
+      const taxable = calcTaxable(gross, nssf, housing, shif);
       const payeBefore = calcPAYEBeforeRelief(taxable);
       const allowTotal = Object.values(r.allowances ?? {}).reduce((a, v) => a + (Number(v) || 0), 0);
+      const cotu = Number(r.other_deductions?.cotu) || 0;
+      const welfare = Number(r.other_deductions?.welfare) || 0;
 
       const vals = [
         emp?.full_name ?? r.employee_id,
@@ -137,7 +129,8 @@ export const PayslipsSection = ({ employeeId, onClearFilter }: Props) => {
         nssf,
         housing,
         shif,
-        0, // COTU
+        cotu,
+        welfare,
         taxable,
         payeBefore,
         PERSONAL_RELIEF,
@@ -241,9 +234,11 @@ export const PayslipsSection = ({ employeeId, onClearFilter }: Props) => {
               const shif = Number(r.nhif_employee) || 0;
               const housing = Number(r.housing_levy) || 0;
               const paye = Number(r.paye) || 0;
-              const taxable = calcTaxable(gross, nssf);
+              const taxable = calcTaxable(gross, nssf, housing, shif);
               const payeBefore = calcPAYEBeforeRelief(taxable);
               const allowTotal = Object.values(r.allowances ?? {}).reduce((a, v) => a + (Number(v) || 0), 0);
+              const cotu = Number(r.other_deductions?.cotu) || 0;
+              const welfare = Number(r.other_deductions?.welfare) || 0;
               const isExpanded = expanded === r.id;
 
               return (
@@ -306,6 +301,8 @@ export const PayslipsSection = ({ employeeId, onClearFilter }: Props) => {
 
                             <div className="font-semibold text-muted-foreground uppercase tracking-wide mt-3 mb-1">Deductions</div>
                             <div className="flex justify-between"><span>NSSF</span><span className="text-destructive">-{fmtKES(nssf)}</span></div>
+                            {cotu > 0 && <div className="flex justify-between"><span>COTU Education Fund</span><span className="text-destructive">-{fmtKES(cotu)}</span></div>}
+                            {welfare > 0 && <div className="flex justify-between"><span>Staff Welfare</span><span className="text-destructive">-{fmtKES(welfare)}</span></div>}
                             <div className="flex justify-between border-t pt-1"><span>Taxable Income</span><span>{fmtKES(taxable)}</span></div>
                             <div className="flex justify-between"><span>PAYE (before relief)</span><span className="text-destructive">-{fmtKES(payeBefore)}</span></div>
                             <div className="flex justify-between"><span>Tax Relief</span><span className="text-success">+{fmtKES(PERSONAL_RELIEF)}</span></div>

@@ -15,21 +15,16 @@ import { toast } from "@/components/ui/use-toast";
 import { fmtKES, type Employee } from "@/lib/employees";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
-
-const calcPAYEBeforeRelief = (taxable: number) => {
-  if (taxable <= 24000) return taxable * 0.1;
-  if (taxable <= 32333) return 2400 + (taxable - 24000) * 0.25;
-  if (taxable <= 500000) return 2400 + 2083.25 + (taxable - 32333) * 0.3;
-  if (taxable <= 800000) return 2400 + 2083.25 + 140300.1 + (taxable - 500000) * 0.325;
-  return 2400 + 2083.25 + 140300.1 + 97500 + (taxable - 800000) * 0.35;
-};
-
-const HOUSING_LEVY = 0.015;
-const SHIF = 0.0275;
-const NSSF_RATE = 0.06;
-const NSSF_CAP = 4320;
-const PERSONAL_RELIEF = 2400;
-const STANDARD_DAYS = 26;
+import {
+  PERSONAL_RELIEF,
+  HOUSING_LEVY,
+  SHIF,
+  NSSF_RATE,
+  NSSF_CAP,
+  STANDARD_DAYS,
+  calcPAYEBeforeRelief,
+  calcTaxable,
+} from "@/lib/payeCalculator";
 
 interface PreviewRow {
   employee: Employee;
@@ -138,7 +133,7 @@ export const RunPayrollSection = () => {
       const shif = gross * SHIF;
       const cotu = Number(e.deductions?.cotu) || 0;
       const welfare = Number(e.deductions?.welfare ?? e.deductions?.staff_welfare) || 0;
-      const taxable = Math.max(0, gross - nssf - housing - shif);
+      const taxable = calcTaxable(gross, nssf, housing, shif);
       const taxBeforeRelief = calcPAYEBeforeRelief(taxable);
       const paye = Math.max(0, taxBeforeRelief - PERSONAL_RELIEF);
       const otherDeductions = Object.entries(e.deductions ?? {})
@@ -361,11 +356,11 @@ export const RunPayrollSection = () => {
               <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground">Welfare</TableHead>
               <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground">NSSF</TableHead>
               <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground">Housing</TableHead>
+              <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground">SHIF</TableHead>
               <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground">Taxable</TableHead>
               <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground">Tax B/Relief</TableHead>
               <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground">Relief</TableHead>
               <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground">PAYE</TableHead>
-              <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground">SHIF</TableHead>
               <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground">Net Pay</TableHead>
             </TableRow>
           </TableHeader>
@@ -414,11 +409,11 @@ export const RunPayrollSection = () => {
                 <TableCell className="text-right tabular-nums">{fmtKES(r.welfare)}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmtKES(r.nssf)}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmtKES(r.housing)}</TableCell>
+                <TableCell className="text-right tabular-nums">{fmtKES(r.shif)}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmtKES(r.taxable)}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmtKES(r.taxBeforeRelief)}</TableCell>
                 <TableCell className="text-right tabular-nums text-muted-foreground">{fmtKES(PERSONAL_RELIEF)}</TableCell>
                 <TableCell className="text-right tabular-nums text-destructive">{fmtKES(r.paye)}</TableCell>
-                <TableCell className="text-right tabular-nums">{fmtKES(r.shif)}</TableCell>
                 <TableCell className="text-right font-semibold tabular-nums text-success">{fmtKES(r.net)}</TableCell>
               </TableRow>
             ))}
