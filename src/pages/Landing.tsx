@@ -12,6 +12,7 @@ const features = [
 ];
 
 const BRAND = "#0d1f2d";
+const GOLD = "#E7B008";
 
 const Landing = () => {
   const { user, loading } = useAuth();
@@ -50,7 +51,7 @@ const Landing = () => {
           </Button>
           <Button
             asChild
-            style={{ background: BRAND, color: "white", border: "none" }}
+            style={{ background: GOLD, color: BRAND, border: "none" }}
             className="hover:opacity-90"
           >
             <Link to="/signup">Get started</Link>
@@ -73,8 +74,8 @@ const Landing = () => {
             <span className="relative inline-block">
               done right.
               <span
-                className="absolute -bottom-1 left-0 h-1 w-full rounded-full opacity-40"
-                style={{ background: BRAND }}
+                className="absolute -bottom-1 left-0 h-1 w-full rounded-full"
+                style={{ background: GOLD }}
               />
             </span>
           </h1>
@@ -88,7 +89,7 @@ const Landing = () => {
             <Button
               asChild
               size="lg"
-              style={{ background: BRAND, color: "white", border: "none" }}
+              style={{ background: GOLD, color: BRAND, border: "none" }}
               className="hover:opacity-90 shadow-lg"
             >
               <Link to="/signup">
@@ -114,7 +115,7 @@ const Landing = () => {
               { label: "Payroll Processed", value: "KES 500M+" },
             ].map((stat) => (
               <div key={stat.label} className="text-center">
-                <p className="text-2xl font-bold" style={{ color: BRAND }}>{stat.value}</p>
+                <p className="text-2xl font-bold" style={{ color: GOLD }}>{stat.value}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{stat.label}</p>
               </div>
             ))}
@@ -153,8 +154,8 @@ const Landing = () => {
           <Button
             asChild
             size="lg"
-            className="mt-6 bg-white hover:bg-white/90"
-            style={{ color: BRAND }}
+            className="mt-6 hover:opacity-90"
+            style={{ background: GOLD, color: BRAND, border: "none" }}
           >
             <Link to="/signup">
               Start for free <ArrowRight className="ml-1.5 h-4 w-4" />
