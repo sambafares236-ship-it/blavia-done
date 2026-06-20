@@ -15,6 +15,7 @@ import {
   Landmark,
   FileCheck,
   FileText,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/blavia-logo.png";
@@ -35,7 +36,14 @@ const links = [
   { to: "/etims-settings", label: "eTIMS", icon: FileCheck },
 ];
 
-export const SideNav = () => {
+interface SideNavProps {
+  /** Controls visibility on mobile (< md breakpoint). Ignored on desktop, where the sidebar is always visible. */
+  open?: boolean;
+  /** Called when the drawer should close (backdrop tap, link tap, or close button on mobile). */
+  onClose?: () => void;
+}
+
+export const SideNav = ({ open = false, onClose }: SideNavProps) => {
   const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
 
@@ -43,6 +51,10 @@ export const SideNav = () => {
     await signOut();
     toast({ title: "Signed out" });
     navigate("/login", { replace: true });
+  };
+
+  const handleNavClick = () => {
+    onClose?.();
   };
 
   const fullName =
@@ -60,82 +72,111 @@ export const SideNav = () => {
   const displayName = businessName ?? fullName ?? user?.email ?? "User";
 
   return (
-    <aside className="hidden w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground md:flex">
-
-      {/* Logo — full width, tall, readable */}
-      <div className="w-full overflow-hidden">
-        <img
-          src={logo}
-          alt="BLAVIA"
-          className="w-full object-cover"
-          style={{ height: '100px' }}
+    <>
+      {/* Mobile backdrop - tapping it closes the drawer */}
+      {open && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          onClick={onClose}
+          aria-hidden="true"
         />
-      </div>
+      )}
 
-      {/* Nav */}
-      <nav className="flex-1 space-y-1 px-3 py-3 overflow-y-auto">
-        {links.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) =>
-              cn(
-                "group flex items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-white",
-              )
-            }
+      <aside
+        className={cn(
+          // Mobile: fixed off-canvas drawer that slides in from the left
+          "fixed inset-y-0 left-0 z-50 flex w-72 max-w-[80vw] flex-col bg-sidebar text-sidebar-foreground transition-transform duration-300 ease-in-out",
+          open ? "translate-x-0" : "-translate-x-full",
+          // Desktop: always-visible static column, transform/position reset
+          "md:static md:z-auto md:flex md:w-60 md:max-w-none md:translate-x-0 md:shrink-0"
+        )}
+      >
+        {/* Logo + mobile close button */}
+        <div className="relative w-full overflow-hidden shrink-0">
+          <img
+            src={logo}
+            alt="BLAVIA"
+            className="w-full object-cover"
+            style={{ height: '100px' }}
+          />
+          <button
+            onClick={onClose}
+            aria-label="Close menu"
+            className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/30 text-white md:hidden"
           >
-            {({ isActive }) => (
-              <>
-                <span className="flex items-center gap-3">
-                  <Icon className="h-4 w-4" strokeWidth={2.25} />
-                  {label}
-                </span>
-                {isActive && <ArrowUpRight className="h-3.5 w-3.5 opacity-80" />}
-              </>
-            )}
-          </NavLink>
-        ))}
-
-        <div className="pt-2">
-          <div className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/70">
-            <Sparkles className="h-4 w-4" strokeWidth={2.25} />
-            AI Assistant
-          </div>
+            <X className="h-4 w-4" />
+          </button>
         </div>
-      </nav>
 
-      {/* Profile + footer */}
-      <div className="space-y-2 border-t border-sidebar-border p-3">
-        <div className="flex items-center gap-3 rounded-md px-2 py-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary text-xs font-bold text-sidebar-primary-foreground">
-            {initials}
+        {/* Nav */}
+        <nav className="flex-1 space-y-1 px-3 py-3 overflow-y-auto">
+          {links.map(({ to, label, icon: Icon, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              onClick={handleNavClick}
+              className={({ isActive }) =>
+                cn(
+                  "group flex items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-white",
+                )
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <span className="flex items-center gap-3">
+                    <Icon className="h-4 w-4" strokeWidth={2.25} />
+                    {label}
+                  </span>
+                  {isActive && <ArrowUpRight className="h-3.5 w-3.5 opacity-80" />}
+                </>
+              )}
+            </NavLink>
+          ))}
+
+          <div className="pt-2">
+            <div className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/70">
+              <Sparkles className="h-4 w-4" strokeWidth={2.25} />
+              AI Assistant
+            </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-white">{displayName}</p>
-            <p className="truncate text-xs text-sidebar-foreground/60">
-              {fullName ?? user?.email ?? "Member"}
-            </p>
+        </nav>
+
+        {/* Profile + footer */}
+        <div className="space-y-2 border-t border-sidebar-border p-3 shrink-0">
+          <div className="flex items-center gap-3 rounded-md px-2 py-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary text-xs font-bold text-sidebar-primary-foreground">
+              {initials}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-white">{displayName}</p>
+              <p className="truncate text-xs text-sidebar-foreground/60">
+                {fullName ?? user?.email ?? "Member"}
+              </p>
+            </div>
           </div>
+          <button
+            onClick={() => {
+              handleNavClick();
+              navigate("/settings");
+            }}
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-white"
+          >
+            <Settings className="h-4 w-4" />
+            Settings
+          </button>
+          <button
+            onClick={handleLogout}
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-white"
+          >
+            <LogOut className="h-4 w-4" />
+            Logout
+          </button>
         </div>
-        <button
-          onClick={() => navigate("/settings")}
-          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-white"
-        >
-          <Settings className="h-4 w-4" />
-          Settings
-        </button>
-        <button
-          onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-white"
-        >
-          <LogOut className="h-4 w-4" />
-          Logout
-        </button>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 };

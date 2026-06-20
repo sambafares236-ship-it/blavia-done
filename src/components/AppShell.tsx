@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   AlertTriangle, Bell, CalendarClock, CheckCheck,
-  ClipboardList, CreditCard, LogOut, Search, TrendingDown, Users,
+  ClipboardList, CreditCard, LogOut, Menu, Search, TrendingDown, Users,
 } from "lucide-react";
 import { SideNav } from "./SideNav";
 import { Input } from "@/components/ui/input";
@@ -194,6 +194,7 @@ export const AppShell = ({ children }: AppShellProps) => {
   const location = useLocation();
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [read, setRead] = useState<Set<string>>(new Set());
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -209,6 +210,11 @@ export const AppShell = ({ children }: AppShellProps) => {
     if (!business?.id) return;
     buildNotifications(business.id).then(setNotifs);
   }, [business?.id, location.pathname]);
+
+  // Close mobile sidebar drawer on every route change
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
 
   // Close on outside click
   useEffect(() => {
@@ -257,11 +263,19 @@ export const AppShell = ({ children }: AppShellProps) => {
 
   return (
     <div className="flex min-h-screen bg-background">
-      <SideNav />
+      <SideNav open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/85 px-4 py-3 backdrop-blur md:px-8">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open menu"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted md:hidden"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+
           <div className="relative hidden flex-1 max-w-md md:block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
