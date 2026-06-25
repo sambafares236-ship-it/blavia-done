@@ -200,7 +200,7 @@ export const RunPayrollSection = () => {
         total_deductions: Math.round(selectedRows.reduce((s, r) => s + r.paye + r.nssf + r.housing + r.shif + r.cotu + r.welfare, 0)),
         total_net: Math.round(selectedRows.reduce((s, r) => s + r.net, 0)),
         total_employer_contributions: Math.round(selectedRows.reduce((s, r) => s + r.nssf, 0)),
-        status: "pending",
+        status: "processing",
         notes: `Payroll run for ${periodStart} → ${periodEnd}`,
       })
       .select()
@@ -239,6 +239,13 @@ export const RunPayrollSection = () => {
     }));
 
     const { error } = await supabase.from("payslips").insert(records);
+
+    // ── Mark the run completed or failed based on the result ──
+    await supabase
+      .from("payroll_runs")
+      .update({ status: error ? "failed" : "completed" })
+      .eq("id", runData.id);
+
     setRunning(false);
 
     if (error) {
