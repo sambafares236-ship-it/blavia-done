@@ -19,6 +19,7 @@ import BalanceSheet from "./pages/BalanceSheet.tsx";
 import ScheduledExpenses from "./pages/ScheduledExpenses.tsx";
 import Settings from "./pages/Settings.tsx";
 import EtimsSettings from "./pages/EtimsSettings.tsx";
+import MpesaSettings from "./pages/MpesaSettings.tsx";
 import Invoices from "./pages/Invoices.tsx";
 import CreateInvoice from "./pages/CreateInvoice.tsx";
 import InvoiceDetail from "./pages/InvoiceDetail.tsx";
@@ -38,7 +39,6 @@ const App = () => (
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
-
             {/* Protected */}
             <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
             <Route path="/executive" element={<ProtectedRoute><ExecutiveDashboard /></ProtectedRoute>} />
@@ -51,17 +51,15 @@ const App = () => (
             <Route path="/scheduled-expenses" element={<ProtectedRoute><ScheduledExpenses /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/etims-settings" element={<ProtectedRoute><EtimsSettings /></ProtectedRoute>} />
-
+            <Route path="/mpesa-settings" element={<ProtectedRoute><MpesaSettings /></ProtectedRoute>} />
             {/* Invoice Routes */}
             <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
             <Route path="/invoices/new" element={<ProtectedRoute><CreateInvoice /></ProtectedRoute>} />
             <Route path="/invoices/:id" element={<ProtectedRoute><InvoiceDetail /></ProtectedRoute>} />
-
             {/* Legacy redirects */}
             <Route path="/transactions" element={<Navigate to="/payments" replace />} />
             <Route path="/employees" element={<Navigate to="/payroll?tab=employees" replace />} />
             <Route path="/payslips" element={<Navigate to="/payroll?tab=payslips" replace />} />
-
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

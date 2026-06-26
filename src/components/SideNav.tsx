@@ -16,6 +16,7 @@ import {
   FileCheck,
   FileText,
   X,
+  Smartphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/blavia-logo.png";
@@ -34,12 +35,11 @@ const links = [
   { to: "/reports", label: "Financial Reports", icon: FileBarChart2 },
   { to: "/analytics", label: "Analytics", icon: PieChart },
   { to: "/etims-settings", label: "eTIMS", icon: FileCheck },
+  { to: "/mpesa-settings", label: "M-Pesa Setup", icon: Smartphone },
 ];
 
 interface SideNavProps {
-  /** Controls visibility on mobile (< md breakpoint). Ignored on desktop, where the sidebar is always visible. */
   open?: boolean;
-  /** Called when the drawer should close (backdrop tap, link tap, or close button on mobile). */
   onClose?: () => void;
 }
 
@@ -73,7 +73,6 @@ export const SideNav = ({ open = false, onClose }: SideNavProps) => {
 
   return (
     <>
-      {/* Mobile backdrop - tapping it closes the drawer */}
       {open && (
         <div
           className="fixed inset-0 z-40 bg-black/50 md:hidden"
@@ -84,10 +83,8 @@ export const SideNav = ({ open = false, onClose }: SideNavProps) => {
 
       <aside
         className={cn(
-          // Mobile: fixed off-canvas drawer that slides in from the left
           "fixed inset-y-0 left-0 z-50 flex w-72 max-w-[80vw] flex-col bg-sidebar text-sidebar-foreground transition-transform duration-300 ease-in-out",
           open ? "translate-x-0" : "-translate-x-full",
-          // Desktop: always-visible static column, transform/position reset
           "md:static md:z-auto md:flex md:w-60 md:max-w-none md:translate-x-0 md:shrink-0"
         )}
       >
