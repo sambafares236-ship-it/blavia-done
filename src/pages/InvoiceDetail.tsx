@@ -4,11 +4,12 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/use-toast";
 import {
   ArrowLeft, Send, CheckCircle, Trash2,
   AlertCircle, FileText, Building2, User,
-  Calendar, CreditCard,
+  Calendar, CreditCard, Smartphone, Loader2,
 } from "lucide-react";
 
 interface Invoice {
@@ -22,6 +23,7 @@ interface Invoice {
   total: number;
   notes: string;
   payment_method: string;
+  mpesa_reference: string;
   cuin: string;
   sent_at: string;
   paid_at: string;
@@ -64,9 +66,90 @@ const InvoiceDetail = () => {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
 
+  // M-Pesa states
+  const [hasMpesa, setHasMpesa] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [stkLoading, setStkLoading] = useState(false);
+  const [stkSent, setStkSent] = useState(false);
+  const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
+  const [polling, setPolling] = useState(false);
+
   useEffect(() => {
-    if (id && user) { fetchInvoice(); fetchBusiness(); }
+    if (id && user) {
+      fetchInvoice();
+      fetchBusiness();
+      checkMpesaConfig();
+    }
   }, [id, user]);
+
+  // Auto-fill phone from contact
+  useEffect(() => {
+    if (invoice?.contacts?.phone && !phoneNumber) {
+      let phone = invoice.contacts.phone.replace(/\s/g, "");
+      if (phone.startsWith("0")) phone = "254" + phone.slice(1);
+      if (phone.startsWith("+")) phone = phone.slice(1);
+      setPhoneNumber(phone);
+    }
+  }, [invoice]);
+
+  // Poll for payment confirmation
+  useEffect(() => {
+    if (!stkSent || !checkoutRequestId) return;
+
+    setPolling(true);
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from("mpesa_transactions")
+        .select("status, mpesa_receipt_number")
+        .eq("checkout_request_id", checkoutRequestId)
+        .single();
+
+      if (data?.status === "success") {
+        clearInterval(interval);
+        setPolling(false);
+        setStkSent(false);
+        toast({ title: "Payment received!", description: `M-Pesa receipt: ${data.mpesa_receipt_number}` });
+        fetchInvoice();
+      } else if (data?.status === "failed" || data?.status === "cancelled") {
+        clearInterval(interval);
+        setPolling(false);
+        setStkSent(false);
+        toast({ title: "Payment failed or cancelled", variant: "destructive" });
+      }
+    }, 5000);
+
+    // Stop polling after 2 minutes
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+      setPolling(false);
+    }, 120000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [stkSent, checkoutRequestId]);
+
+  const checkMpesaConfig = async () => {
+    if (!user) return;
+    const { data: biz } = await supabase
+      .from("businesses")
+      .select("id")
+      .eq("owner_id", user.id)
+      .limit(1)
+      .single();
+
+    if (!biz) return;
+
+    const { data: config } = await supabase
+      .from("mpesa_configs")
+      .select("id")
+      .eq("business_id", biz.id)
+      .eq("is_active", true)
+      .single();
+
+    setHasMpesa(!!config);
+  };
 
   const fetchBusiness = async () => {
     const { data } = await supabase
@@ -85,16 +168,77 @@ const InvoiceDetail = () => {
       .select(`*, contacts (name, email, phone, kra_pin, address)`)
       .eq("id", id)
       .single();
-    if (error) { toast({ title: "Invoice not found", variant: "destructive" }); navigate("/invoices"); return; }
+    if (error) {
+      toast({ title: "Invoice not found", variant: "destructive" });
+      navigate("/invoices");
+      return;
+    }
     setInvoice(inv);
-    const { data: invItems } = await supabase.from("invoice_items").select("*").eq("invoice_id", id).order("created_at");
+    const { data: invItems } = await supabase
+      .from("invoice_items")
+      .select("*")
+      .eq("invoice_id", id)
+      .order("created_at");
     setItems(invItems || []);
     setLoading(false);
   };
 
+  const handleStkPush = async () => {
+    if (!phoneNumber) {
+      toast({ title: "Please enter a phone number", variant: "destructive" });
+      return;
+    }
+    if (!invoice) return;
+
+    setStkLoading(true);
+
+    // Format phone
+    let phone = phoneNumber.replace(/\s/g, "");
+    if (phone.startsWith("0")) phone = "254" + phone.slice(1);
+    if (phone.startsWith("+")) phone = phone.slice(1);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("mpesa-stk-push", {
+        body: {
+          business_id: invoice.business_id,
+          phone_number: phone,
+          amount: Math.ceil(invoice.total),
+          invoice_id: invoice.id,
+          account_reference: invoice.invoice_number,
+          transaction_desc: `Payment for ${invoice.invoice_number}`,
+        },
+      });
+
+      if (error || !data?.success) {
+        toast({
+          title: "STK Push failed",
+          description: data?.error || "Could not send payment request",
+          variant: "destructive",
+        });
+        setStkLoading(false);
+        return;
+      }
+
+      setCheckoutRequestId(data.checkout_request_id);
+      setStkSent(true);
+      toast({
+        title: "Payment request sent!",
+        description: `Check ${phoneNumber} for M-Pesa prompt`,
+      });
+
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+
+    setStkLoading(false);
+  };
+
   const handleMarkPaid = async () => {
     setUpdating(true);
-    const { error } = await supabase.from("invoices").update({ status: "paid", paid_at: new Date().toISOString() }).eq("id", id);
+    const { error } = await supabase
+      .from("invoices")
+      .update({ status: "paid", paid_at: new Date().toISOString() })
+      .eq("id", id);
     if (error) { toast({ title: "Error updating invoice", variant: "destructive" }); }
     else { toast({ title: "Invoice marked as paid!" }); fetchInvoice(); }
     setUpdating(false);
@@ -102,7 +246,10 @@ const InvoiceDetail = () => {
 
   const handleSend = async () => {
     setUpdating(true);
-    const { error } = await supabase.from("invoices").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", id);
+    const { error } = await supabase
+      .from("invoices")
+      .update({ status: "sent", sent_at: new Date().toISOString() })
+      .eq("id", id);
     if (error) { toast({ title: "Error sending invoice", variant: "destructive" }); setUpdating(false); return; }
     if (invoice) {
       await supabase.from("invoice_queue").insert({
@@ -131,7 +278,9 @@ const InvoiceDetail = () => {
     `KES ${(amount || 0).toLocaleString("en-KE", { minimumFractionDigits: 2 })}`;
 
   const formatDate = (date: string) =>
-    date ? new Date(date).toLocaleDateString("en-KE", { day: "numeric", month: "long", year: "numeric" }) : "—";
+    date ? new Date(date).toLocaleDateString("en-KE", {
+      day: "numeric", month: "long", year: "numeric"
+    }) : "—";
 
   if (loading) {
     return (
@@ -147,10 +296,12 @@ const InvoiceDetail = () => {
 
   const status = statusConfig[invoice.status] || statusConfig.draft;
   const StatusIcon = status.icon;
+  const canRequestPayment = ["sent", "overdue"].includes(invoice.status) && hasMpesa;
 
   return (
     <AppShell>
       <div className="space-y-6 max-w-4xl mx-auto">
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -191,9 +342,89 @@ const InvoiceDetail = () => {
           </div>
         </div>
 
+        {/* M-Pesa Pay Now Section */}
+        {canRequestPayment && (
+          <div className="rounded-xl border-2 border-green-200 bg-green-50 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Smartphone className="h-5 w-5 text-green-600" />
+              <h3 className="font-semibold text-green-800">Request M-Pesa Payment</h3>
+              <span className="ml-auto text-sm font-bold text-green-700">
+                {formatCurrency(invoice.total)}
+              </span>
+            </div>
+
+            {!stkSent ? (
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <Input
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    placeholder="254700000000"
+                    className="bg-white border-green-300 focus:border-green-500"
+                  />
+                  <p className="text-xs text-green-600 mt-1">
+                    Enter customer's M-Pesa number (e.g. 254700000000 or 07XXXXXXXX)
+                  </p>
+                </div>
+                <Button
+                  onClick={handleStkPush}
+                  disabled={stkLoading || !phoneNumber}
+                  className="bg-green-600 hover:bg-green-700 text-white gap-2 shrink-0"
+                >
+                  {stkLoading ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" />Sending...</>
+                  ) : (
+                    <><Smartphone className="h-4 w-4" />Send STK Push</>
+                  )}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 bg-white rounded-lg border border-green-200 p-4">
+                <Loader2 className="h-5 w-5 animate-spin text-green-600" />
+                <div>
+                  <p className="text-sm font-medium text-green-800">
+                    Waiting for payment from {phoneNumber}...
+                  </p>
+                  <p className="text-xs text-green-600">
+                    Customer should see an M-Pesa prompt. Page updates automatically when paid.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setStkSent(false); setPolling(false); }}
+                  className="ml-auto shrink-0 border-green-300 text-green-700"
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* No M-Pesa configured warning */}
+        {!hasMpesa && invoice.status !== "draft" && invoice.status !== "paid" && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-800">M-Pesa not configured</p>
+              <p className="text-xs text-amber-600">Set up your Daraja credentials to accept M-Pesa payments.</p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => navigate("/mpesa-settings")}
+              className="border-amber-300 text-amber-700 shrink-0"
+            >
+              Set up M-Pesa
+            </Button>
+          </div>
+        )}
+
         {/* Invoice Card */}
         <div className="rounded-xl border bg-card overflow-hidden">
-          {/* Business + Customer Header */}
+
+          {/* Business + Customer */}
           <div className="bg-sidebar p-6 grid grid-cols-2 gap-6">
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -296,9 +527,16 @@ const InvoiceDetail = () => {
           <div className="bg-muted/30 px-6 py-4 flex items-center justify-between border-t">
             <div>
               {invoice.cuin ? (
-                <p className="text-xs text-muted-foreground">KRA eTIMS CUIN: <span className="font-medium">{invoice.cuin}</span></p>
+                <p className="text-xs text-muted-foreground">
+                  KRA eTIMS CUIN: <span className="font-medium">{invoice.cuin}</span>
+                </p>
               ) : (
                 <p className="text-xs text-muted-foreground">eTIMS: Not yet submitted</p>
+              )}
+              {invoice.mpesa_reference && (
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  M-Pesa Ref: <span className="font-medium text-green-600">{invoice.mpesa_reference}</span>
+                </p>
               )}
             </div>
             <p className="text-xs text-muted-foreground">
@@ -326,7 +564,7 @@ const InvoiceDetail = () => {
             {invoice.paid_at && (
               <div className="flex items-center gap-3 text-sm">
                 <div className="h-2 w-2 rounded-full bg-green-500" />
-                <span className="text-muted-foreground">Paid</span>
+                <span className="text-muted-foreground">Paid via M-Pesa</span>
                 <span className="font-medium">{formatDate(invoice.paid_at)}</span>
               </div>
             )}
