@@ -72,10 +72,8 @@ const InvoiceDetail = () => {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
 
-  // M-Pesa config check
   const [hasMpesa, setHasMpesa] = useState(false);
 
-  // Smart payment panel fields
   const [payAmount, setPayAmount] = useState("");
   const [payPhone, setPayPhone] = useState("");
   const [payEmail, setPayEmail] = useState("");
@@ -85,6 +83,7 @@ const InvoiceDetail = () => {
   const [sending, setSending] = useState(false);
   const [stkSent, setStkSent] = useState(false);
   const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
+  const [emailSentForInvoice, setEmailSentForInvoice] = useState(false);
 
   useEffect(() => {
     if (id && user) {
@@ -94,14 +93,12 @@ const InvoiceDetail = () => {
     }
   }, [id, user]);
 
-  // Pre-fill the smart panel once invoice loads
   useEffect(() => {
     if (!invoice) return;
     setPayAmount(String(invoice.total));
     setPayDescription(invoice.payment_description || "Payment for goods/services");
     setPayDueDate(invoice.due_date || todayStr());
 
-    // Prefer saved customer_phone/email, fall back to contact's
     if (invoice.customer_phone) {
       setPayPhone(invoice.customer_phone);
     } else if (invoice.contacts?.phone) {
@@ -118,7 +115,6 @@ const InvoiceDetail = () => {
     }
   }, [invoice]);
 
-  // Poll for payment confirmation after STK Push
   useEffect(() => {
     if (!stkSent || !checkoutRequestId) return;
 
@@ -193,6 +189,16 @@ const InvoiceDetail = () => {
       return;
     }
     setInvoice(inv);
+
+    // Reflect whether an email is already queued/sent for this invoice
+    const { data: existingQueue } = await supabase
+      .from("invoice_queue")
+      .select("id")
+      .eq("invoice_id", id)
+      .in("status", ["pending", "done"])
+      .limit(1);
+    setEmailSentForInvoice((existingQueue?.length || 0) > 0);
+
     const { data: invItems } = await supabase
       .from("invoice_items")
       .select("*")
@@ -202,7 +208,6 @@ const InvoiceDetail = () => {
     setLoading(false);
   };
 
-  // ── The Smart Send Logic ──────────────────────────────────────
   const isDueToday = payDueDate <= todayStr();
   const hasPhone = !!payPhone.trim();
   const hasEmail = !!payEmail.trim();
@@ -226,7 +231,6 @@ const InvoiceDetail = () => {
 
     setSending(true);
 
-    // Save the panel's fields onto the invoice itself
     const { error: updateError } = await supabase
       .from("invoices")
       .update({
@@ -246,18 +250,35 @@ const InvoiceDetail = () => {
       return;
     }
 
-    // Queue the email if an email was provided
-    if (hasEmail) {
-      await supabase.from("invoice_queue").insert({
+    // Queue the email only if not already queued/sent — guarded twice:
+    // here on the frontend, and at the database via a unique index.
+    if (hasEmail && !emailSentForInvoice) {
+      const { error: queueError } = await supabase.from("invoice_queue").insert({
         invoice_id: invoice.id,
         business_id: invoice.business_id,
         contact_id: invoice.contact_id,
         action: "send_email",
         status: "pending",
       });
+
+      if (queueError) {
+        if (queueError.code === "23505") {
+          toast({
+            title: "Email already queued",
+            description: "This invoice already has a pending or sent email — no need to send again.",
+          });
+          setEmailSentForInvoice(true);
+        } else {
+          toast({ title: "Error queuing email", description: queueError.message, variant: "destructive" });
+        }
+      } else {
+        setEmailSentForInvoice(true);
+        toast({ title: "Invoice queued for email" });
+      }
+    } else if (hasEmail && emailSentForInvoice) {
+      toast({ title: "Email already sent", description: "This invoice's email has already been queued previously." });
     }
 
-    // Fire STK Push immediately only if phone provided AND due today
     if (hasPhone && isDueToday) {
       let phone = payPhone.replace(/\s/g, "");
       if (phone.startsWith("0")) phone = "254" + phone.slice(1);
@@ -286,8 +307,6 @@ const InvoiceDetail = () => {
       }
     } else if (hasPhone && !isDueToday) {
       toast({ title: "STK Push scheduled", description: `Will be sent automatically on ${formatDate(payDueDate)}` });
-    } else if (hasEmail && !hasPhone) {
-      toast({ title: "Invoice queued for email" });
     }
 
     fetchInvoice();
@@ -348,7 +367,6 @@ const InvoiceDetail = () => {
     <AppShell>
       <div className="space-y-6 max-w-4xl mx-auto">
 
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="sm" onClick={() => navigate("/invoices")} className="gap-2">
@@ -382,7 +400,6 @@ const InvoiceDetail = () => {
           </div>
         </div>
 
-        {/* ── Smart Payment Panel ────────────────────────────────── */}
         {showPaymentPanel && (
           <div className="rounded-xl border-2 border-green-200 bg-green-50 p-5 space-y-4">
             <div className="flex items-center gap-2">
@@ -464,6 +481,13 @@ const InvoiceDetail = () => {
                   </div>
                 )}
 
+                {hasEmail && emailSentForInvoice && (
+                  <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                    <CheckCircle className="h-3.5 w-3.5 shrink-0" />
+                    An email has already been queued or sent for this invoice.
+                  </div>
+                )}
+
                 <Button
                   onClick={handleSmartSend}
                   disabled={sending || !canSend}
@@ -500,10 +524,8 @@ const InvoiceDetail = () => {
           </div>
         )}
 
-        {/* Invoice Card */}
         <div className="rounded-xl border bg-card overflow-hidden">
 
-          {/* Business + Customer */}
           <div className="bg-sidebar p-6 grid grid-cols-2 gap-6">
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -527,7 +549,6 @@ const InvoiceDetail = () => {
             </div>
           </div>
 
-          {/* Invoice Meta */}
           <div className="grid grid-cols-3 gap-4 p-6 border-b bg-muted/30">
             <div className="flex items-center gap-3">
               <FileText className="h-4 w-4 text-muted-foreground" />
@@ -552,7 +573,6 @@ const InvoiceDetail = () => {
             </div>
           </div>
 
-          {/* Line Items */}
           <div className="p-6">
             <table className="w-full">
               <thead>
@@ -621,7 +641,6 @@ const InvoiceDetail = () => {
           </div>
         </div>
 
-        {/* Timeline */}
         <div className="rounded-xl border bg-card p-6">
           <h3 className="font-semibold mb-4">Timeline</h3>
           <div className="space-y-3">
