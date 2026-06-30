@@ -1,5 +1,42 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+﻿import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+async function sendWhatsApp(to: string, body: string) {
+  const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID")!;
+  const authToken = Deno.env.get("TWILIO_AUTH_TOKEN")!;
+  const fromNumber = Deno.env.get("TWILIO_WHATSAPP_NUMBER")!;
+
+  let formattedTo = to.toString().replace(/\s/g, "");
+  if (formattedTo.startsWith("0")) formattedTo = "254" + formattedTo.slice(1);
+  if (!formattedTo.startsWith("+")) formattedTo = "+" + formattedTo;
+
+  const params = new URLSearchParams();
+  params.append("From", fromNumber);
+  params.append("To", `whatsapp:${formattedTo}`);
+  params.append("Body", body);
+
+  try {
+    const res = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Basic ${btoa(`${accountSid}:${authToken}`)}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: params.toString(),
+      }
+    );
+    const data = await res.json();
+    if (!res.ok) console.error("WhatsApp send failed:", data);
+    return data;
+  } catch (err) {
+    console.error("WhatsApp send error:", err);
+  }
+}
+
+const fmt = (n: number) =>
+  "KES " + Number(n).toLocaleString("en-KE", { minimumFractionDigits: 2 });
 
 serve(async (req) => {
   try {
@@ -21,7 +58,6 @@ serve(async (req) => {
     const resultCode = callback.ResultCode;
     const resultDesc = callback.ResultDesc;
 
-    // Extract M-Pesa receipt if successful
     let mpesaReceiptNumber = null;
     let transactionDate = null;
     let phoneNumber = null;
@@ -35,7 +71,6 @@ serve(async (req) => {
       amount = items.find((i: any) => i.Name === "Amount")?.Value;
     }
 
-    // Update transaction status
     const { data: transaction, error: updateError } = await supabase
       .from("mpesa_transactions")
       .update({
@@ -54,9 +89,8 @@ serve(async (req) => {
       console.error("Error updating transaction:", updateError);
     }
 
-    // If payment successful � update invoice status
     if (resultCode === 0 && transaction?.invoice_id) {
-      const { error: invError } = await supabase
+      const { data: invoiceData } = await supabase
         .from("invoices")
         .update({
           status: "paid",
@@ -64,13 +98,10 @@ serve(async (req) => {
           mpesa_reference: mpesaReceiptNumber,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", transaction.invoice_id);
+        .eq("id", transaction.invoice_id)
+        .select("invoice_number")
+        .single();
 
-      if (invError) {
-        console.error("Error updating invoice:", invError);
-      }
-
-      // Also record in transactions table
       if (transaction?.business_id) {
         await supabase.from("transactions").insert({
           business_id: transaction.business_id,
@@ -83,10 +114,30 @@ serve(async (req) => {
           ref_number: mpesaReceiptNumber,
           input_source: "mpesa",
         });
+
+        // ── Fetch business for name + owner WhatsApp ──────────
+        const { data: business } = await supabase
+          .from("businesses")
+          .select("business_name, whatsapp_number")
+          .eq("id", transaction.business_id)
+          .single();
+
+        const invoiceNumber = invoiceData?.invoice_number || transaction.account_reference || "";
+
+        // ── 1. Receipt to the CUSTOMER who paid ────────────────
+        if (phoneNumber) {
+          const customerMsg = `✅ *Payment Received!*\n\nThank you for your payment to *${business?.business_name || "the business"}*.\n\n💰 Amount: *${fmt(amount)}*\n🧾 Receipt: *${mpesaReceiptNumber}*\n${invoiceNumber ? `📄 Invoice: *${invoiceNumber}*\n` : ""}\n_Powered by BLAVIA_`;
+          await sendWhatsApp(phoneNumber, customerMsg);
+        }
+
+        // ── 2. Alert to the BUSINESS OWNER ─────────────────────
+        if (business?.whatsapp_number) {
+          const ownerMsg = `💰 *Payment Received!*\n\nYou just received *${fmt(amount)}* via M-Pesa.\n\n🧾 Receipt: *${mpesaReceiptNumber}*\n${invoiceNumber ? `📄 Invoice: *${invoiceNumber}*\n` : ""}📱 From: ${phoneNumber}\n\n_Powered by BLAVIA_`;
+          await sendWhatsApp(business.whatsapp_number, ownerMsg);
+        }
       }
     }
 
-    // Always return success to Safaricom
     return new Response(
       JSON.stringify({ ResultCode: 0, ResultDesc: "Accepted" }),
       { headers: { "Content-Type": "application/json" } }
