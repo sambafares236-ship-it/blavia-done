@@ -98,7 +98,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           .insert({
             business_name: companyName,
             owner_id: userId,
-            owner_email: email ?? null,
+            owner_email: email ?? currentSession?.user?.user_metadata?.email ?? null,
             whatsapp_number: phone,
           })
           .select()
@@ -151,7 +151,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           .insert({
             business_name: companyName,
             owner_id: userId,
-            owner_email: email ?? null,
+            owner_email: email ?? currentSession?.user?.user_metadata?.email ?? null,
             whatsapp_number: phone,
           })
           .select()
