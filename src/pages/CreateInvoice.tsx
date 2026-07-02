@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
@@ -7,14 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/use-toast";
-import { Plus, Trash2, ArrowLeft, Save, Send, Building2 } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, Save, Send, User, Check } from "lucide-react";
 
-interface InvoiceItem {
+interface LineItem {
   description: string;
   quantity: number;
-  unit_price: number;
+  amount_incl: number;
   tax_code: string;
   vat_amount: number;
+  unit_price: number;
   total: number;
 }
 
@@ -25,158 +26,324 @@ interface Contact {
   phone: string;
 }
 
-interface Business {
-  id: string;
-  business_name: string;
-}
+const VAT_RATE = 0.16;
+
+const calcItem = (item: LineItem): LineItem => {
+  const total = parseFloat((item.amount_incl * item.quantity).toFixed(2));
+  const vat_amount = item.tax_code === "A"
+    ? parseFloat((total - total / (1 + VAT_RATE)).toFixed(2))
+    : 0;
+  const unit_price = item.tax_code === "A"
+    ? parseFloat((item.amount_incl / (1 + VAT_RATE)).toFixed(2))
+    : parseFloat(item.amount_incl.toFixed(2));
+  return { ...item, total, vat_amount, unit_price };
+};
+
+const defaultItem = (vatRegistered: boolean): LineItem => calcItem({
+  description: "", quantity: 1, amount_incl: 0,
+  tax_code: vatRegistered ? "A" : "B",
+  vat_amount: 0, unit_price: 0, total: 0,
+});
+
+const todayStr = () => new Date().toISOString().split("T")[0];
+const fmt = (n: number) => `KES ${(n || 0).toLocaleString("en-KE", { minimumFractionDigits: 2 })}`;
+
+const normalizePhone = (raw: string): string => {
+  let p = raw.replace(/\s/g, "");
+  if (p.startsWith("+")) p = p.slice(1);
+  if (p.startsWith("0")) p = "254" + p.slice(1);
+  return p;
+};
 
 const CreateInvoice = () => {
-  const { user } = useAuth();
+  const { user, business } = useAuth();
   const navigate = useNavigate();
-  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const vatRegistered = business?.vat_registered ?? false;
+
   const [businessId, setBusinessId] = useState<string>("");
   const [saving, setSaving] = useState(false);
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [showNewContact, setShowNewContact] = useState(false);
-  const [showNewBusiness, setShowNewBusiness] = useState(false);
-  const [newBusinessName, setNewBusinessName] = useState("");
-  const [contactId, setContactId] = useState("");
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().split("T")[0]);
-  const [dueDate, setDueDate] = useState("");
+
+  // Customer fields
+  const [clientName, setClientName] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
+  const [contactId, setContactId] = useState<string | null>(null); // matched contact
+  const [matchedContact, setMatchedContact] = useState<Contact | null>(null);
+  const [phoneSuggestions, setPhoneSuggestions] = useState<Contact[]>([]);
+  const [emailSuggestions, setEmailSuggestions] = useState<Contact[]>([]);
+  const [showPhoneSugg, setShowPhoneSugg] = useState(false);
+  const [showEmailSugg, setShowEmailSugg] = useState(false);
+
+  // Invoice fields
+  const [dueDate, setDueDate] = useState(todayStr());
   const [notes, setNotes] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("mpesa");
-  const [newContact, setNewContact] = useState({ name: "", email: "", phone: "", kra_pin: "", address: "" });
-  const [items, setItems] = useState<InvoiceItem[]>([
-    { description: "", quantity: 1, unit_price: 0, tax_code: "A", vat_amount: 0, total: 0 },
-  ]);
+  const [items, setItems] = useState<LineItem[]>([defaultItem(vatRegistered)]);
 
-  const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-  const vatAmount = items.reduce((sum, item) => sum + item.vat_amount, 0);
-  const total = subtotal + vatAmount;
+  const phoneRef = useRef<HTMLDivElement>(null);
+  const emailRef = useRef<HTMLDivElement>(null);
+  const phoneTimer = useRef<any>(null);
+  const emailTimer = useRef<any>(null);
+
+  // Derived totals
+  const grandTotal = items.reduce((s, i) => s + i.total, 0);
+  const totalVat = items.reduce((s, i) => s + i.vat_amount, 0);
+  const subtotal = parseFloat((grandTotal - totalVat).toFixed(2));
+
+  const hasPhone = clientPhone.trim().length >= 9;
+  const hasEmail = clientEmail.trim().length > 3;
+
+  const getActionLabel = () => {
+    if (hasPhone && hasEmail) return "Save & Send (STK + Email)";
+    if (hasPhone) return "Save & Send STK Push";
+    if (hasEmail) return "Save & Send Email";
+    return "Save Draft";
+  };
 
   useEffect(() => {
-    const fetchBusinesses = async () => {
-      const { data } = await supabase
-        .from("businesses")
-        .select("id, business_name")
-        .eq("owner_id", user?.id)
-        .order("business_name");
-      if (data && data.length > 0) {
-        setBusinesses(data);
-        setBusinessId(data[0].id);
-        fetchContacts(data[0].id);
-      }
-    };
-    if (user) fetchBusinesses();
-  }, [user]);
-
-  const fetchContacts = async (bizId: string) => {
-    const { data } = await supabase
-      .from("contacts")
-      .select("id, name, email, phone")
-      .eq("business_id", bizId)
-      .order("name");
-    setContacts(data || []);
-    setContactId("");
-  };
-
-  const handleBusinessChange = (id: string) => {
-    setBusinessId(id);
-    fetchContacts(id);
-  };
-
-  const saveNewBusiness = async () => {
-    if (!newBusinessName.trim()) {
-      toast({ title: "Business name is required", variant: "destructive" });
-      return;
+    if (business?.id) {
+      setBusinessId(business.id);
     }
-    const { data, error } = await supabase
-      .from("businesses")
-      .insert({ business_name: newBusinessName, owner_id: user?.id, owner_email: user?.email, currency: "KES" })
-      .select()
-      .single();
-    if (error) { toast({ title: "Error saving business", variant: "destructive" }); return; }
-    setBusinesses([...businesses, data]);
-    setBusinessId(data.id);
-    setShowNewBusiness(false);
-    setNewBusinessName("");
-    fetchContacts(data.id);
-    toast({ title: "Business saved!" });
+  }, [business?.id]);
+
+  useEffect(() => {
+    setItems([defaultItem(vatRegistered)]);
+  }, [vatRegistered]);
+
+  // Close suggestions on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (phoneRef.current && !phoneRef.current.contains(e.target as Node)) setShowPhoneSugg(false);
+      if (emailRef.current && !emailRef.current.contains(e.target as Node)) setShowEmailSugg(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // ── Phone search (debounced) ──────────────────────────────────────────────
+  const handlePhoneChange = (raw: string) => {
+    const normalized = normalizePhone(raw);
+    setClientPhone(normalized);
+    setMatchedContact(null);
+    setContactId(null);
+
+    clearTimeout(phoneTimer.current);
+    if (normalized.length >= 9 && businessId) {
+      phoneTimer.current = setTimeout(async () => {
+        const { data } = await supabase
+          .from("contacts")
+          .select("id, name, email, phone")
+          .eq("business_id", businessId)
+          .ilike("phone", `%${normalized}%`)
+          .limit(5);
+        if (data && data.length > 0) {
+          setPhoneSuggestions(data);
+          setShowPhoneSugg(true);
+        } else {
+          setPhoneSuggestions([]);
+          setShowPhoneSugg(false);
+        }
+      }, 400);
+    } else {
+      setPhoneSuggestions([]);
+      setShowPhoneSugg(false);
+    }
   };
 
-  const updateItem = (index: number, field: string, value: any) => {
+  // ── Email search (debounced) ──────────────────────────────────────────────
+  const handleEmailChange = (val: string) => {
+    setClientEmail(val);
+    setMatchedContact(null);
+    setContactId(null);
+
+    clearTimeout(emailTimer.current);
+    if (val.length >= 3 && businessId) {
+      emailTimer.current = setTimeout(async () => {
+        const { data } = await supabase
+          .from("contacts")
+          .select("id, name, email, phone")
+          .eq("business_id", businessId)
+          .ilike("email", `%${val}%`)
+          .limit(5);
+        if (data && data.length > 0) {
+          setEmailSuggestions(data);
+          setShowEmailSugg(true);
+        } else {
+          setEmailSuggestions([]);
+          setShowEmailSugg(false);
+        }
+      }, 400);
+    } else {
+      setEmailSuggestions([]);
+      setShowEmailSugg(false);
+    }
+  };
+
+  // ── Select a suggested contact ────────────────────────────────────────────
+  const selectContact = (c: Contact) => {
+    setClientName(c.name || "");
+    setClientEmail(c.email || "");
+    setClientPhone(c.phone || "");
+    setContactId(c.id);
+    setMatchedContact(c);
+    setShowPhoneSugg(false);
+    setShowEmailSugg(false);
+  };
+
+  // ── Line item helpers ─────────────────────────────────────────────────────
+  const updateItem = (index: number, field: keyof LineItem, value: any) => {
     const updated = [...items];
-    updated[index] = { ...updated[index], [field]: value };
-    const qty = field === "quantity" ? value : updated[index].quantity;
-    const price = field === "unit_price" ? value : updated[index].unit_price;
-    const taxCode = field === "tax_code" ? value : updated[index].tax_code;
-    const lineTotal = qty * price;
-    const vat = taxCode === "A" ? lineTotal * 0.16 : 0;
-    updated[index].vat_amount = vat;
-    updated[index].total = lineTotal + vat;
+    updated[index] = calcItem({ ...updated[index], [field]: value });
     setItems(updated);
   };
-
-  const addItem = () => {
-    setItems([...items, { description: "", quantity: 1, unit_price: 0, tax_code: "A", vat_amount: 0, total: 0 }]);
-  };
-
+  const addItem = () => setItems([...items, defaultItem(vatRegistered)]);
   const removeItem = (index: number) => {
     if (items.length === 1) return;
     setItems(items.filter((_, i) => i !== index));
   };
 
-  const saveContact = async () => {
-    if (!newContact.name) { toast({ title: "Customer name is required", variant: "destructive" }); return null; }
-    const { data, error } = await supabase.from("contacts").insert({ ...newContact, business_id: businessId }).select().single();
-    if (error) { toast({ title: "Error saving contact", variant: "destructive" }); return null; }
-    setContacts([...contacts, data]);
-    setContactId(data.id);
-    setShowNewContact(false);
-    toast({ title: "Customer saved!" });
+  // ── Resolve / create contact ──────────────────────────────────────────────
+  const resolveContact = async (): Promise<string | null> => {
+    if (!clientName && !clientPhone && !clientEmail) return null;
+
+    // Already matched
+    if (contactId) return contactId;
+
+    // Try to find existing by phone or email
+    if (clientPhone || clientEmail) {
+      let query = supabase.from("contacts").select("id").eq("business_id", businessId);
+      if (clientPhone && clientEmail) {
+        query = query.or(`phone.eq.${clientPhone},email.eq.${clientEmail}`);
+      } else if (clientPhone) {
+        query = query.eq("phone", clientPhone);
+      } else {
+        query = query.eq("email", clientEmail);
+      }
+      const { data } = await query.limit(1).single();
+      if (data) return data.id;
+    }
+
+    // Create new contact
+    const { data, error } = await supabase
+      .from("contacts")
+      .insert({
+        business_id: businessId,
+        name: clientName || clientEmail || clientPhone,
+        phone: clientPhone || null,
+        email: clientEmail || null,
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      toast({ title: "Error saving contact", description: error.message, variant: "destructive" });
+      return null;
+    }
     return data.id;
   };
 
+  // ── Save ──────────────────────────────────────────────────────────────────
   const handleSave = async (sendAfter = false) => {
-    if (!businessId) { toast({ title: "Please select a business", variant: "destructive" }); return; }
-    if (!contactId && !showNewContact) { toast({ title: "Please select or add a customer", variant: "destructive" }); return; }
-    if (items.some(i => !i.description)) { toast({ title: "Please fill in all item descriptions", variant: "destructive" }); return; }
+    if (!businessId) {
+      toast({ title: "Business not loaded", variant: "destructive" });
+      return;
+    }
+    if (items.some(i => !i.description.trim())) {
+      toast({ title: "Please fill in all item descriptions", variant: "destructive" });
+      return;
+    }
+    if (grandTotal <= 0) {
+      toast({ title: "Invoice total must be greater than zero", variant: "destructive" });
+      return;
+    }
+
     setSaving(true);
     try {
-      let finalContactId = contactId;
-      if (showNewContact) {
-        const saved = await saveContact();
-        if (!saved) { setSaving(false); return; }
-        finalContactId = saved;
-      }
-      const { data: invNum } = await supabase.rpc("generate_invoice_number", { p_business_id: businessId });
+      const finalContactId = await resolveContact();
+      const { data: invNum } = await supabase.rpc("generate_invoice_number", {
+        p_business_id: businessId,
+      });
+
+      const willSend = sendAfter && (hasPhone || hasEmail);
+
       const { data: invoice, error: invError } = await supabase
         .from("invoices")
         .insert({
-          business_id: businessId, contact_id: finalContactId,
-          invoice_number: invNum, status: sendAfter ? "sent" : "draft",
-          issue_date: issueDate, due_date: dueDate || null,
-          subtotal, vat_amount: vatAmount, total, notes,
+          business_id: businessId,
+          contact_id: finalContactId,
+          invoice_number: invNum,
+          status: willSend ? "sent" : "draft",
+          issue_date: todayStr(),
+          due_date: dueDate || null,
+          subtotal: parseFloat(subtotal.toFixed(2)),
+          vat_amount: parseFloat(totalVat.toFixed(2)),
+          total: parseFloat(grandTotal.toFixed(2)),
+          notes: notes || null,
           payment_method: paymentMethod,
-          sent_at: sendAfter ? new Date().toISOString() : null,
+          customer_email: hasEmail ? clientEmail.trim() : null,
+          customer_phone: hasPhone ? clientPhone : null,
+          sent_at: willSend ? new Date().toISOString() : null,
         })
-        .select().single();
+        .select()
+        .single();
+
       if (invError) throw invError;
+
       await supabase.from("invoice_items").insert(
         items.map(item => ({
-          invoice_id: invoice.id, business_id: businessId,
-          description: item.description, quantity: item.quantity,
-          unit_price: item.unit_price, tax_code: item.tax_code,
-          vat_amount: item.vat_amount, total: item.total,
+          invoice_id: invoice.id,
+          business_id: businessId,
+          description: item.description,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          tax_code: item.tax_code,
+          vat_amount: item.vat_amount,
+          total: item.total,
         }))
       );
-      if (sendAfter) {
-        await supabase.from("invoice_queue").insert({
-          invoice_id: invoice.id, business_id: businessId,
-          contact_id: finalContactId, action: "send_email", status: "pending",
+
+      // Queue email
+      if (willSend && hasEmail) {
+        const { error: qErr } = await supabase.from("invoice_queue").insert({
+          invoice_id: invoice.id,
+          business_id: businessId,
+          contact_id: finalContactId,
+          action: "send_email",
+          status: "pending",
         });
+        if (qErr && qErr.code !== "23505") {
+          toast({ title: "Warning: email queuing failed", description: qErr.message });
+        }
       }
-      toast({ title: sendAfter ? "Invoice sent!" : "Invoice saved as draft!" });
+
+      // STK Push
+      if (willSend && hasPhone) {
+        const { data: stkData, error: stkErr } = await supabase.functions.invoke("mpesa-stk-push", {
+          body: {
+            invoice_id: invoice.id,
+            phone_number: clientPhone,
+            amount: parseFloat(grandTotal.toFixed(2)),
+            account_reference: invNum,
+            transaction_desc: notes || "Payment for goods/services",
+          },
+        });
+        if (stkErr || !stkData?.success) {
+          toast({
+            title: "Invoice saved but STK Push failed",
+            description: stkData?.error || "You can retry from the invoice page",
+            variant: "destructive",
+          });
+        } else {
+          toast({ title: "STK Push sent!", description: `Check ${clientPhone} for the M-Pesa prompt` });
+        }
+      }
+
+      if (!willSend || (!hasPhone && !hasEmail)) {
+        toast({ title: "Invoice saved as draft" });
+      } else if (!hasPhone && hasEmail) {
+        toast({ title: "Invoice saved!", description: "Email queued — will be sent within 2 minutes" });
+      }
+
       navigate(`/invoices/${invoice.id}`);
     } catch (err: any) {
       toast({ title: "Error saving invoice", description: err.message, variant: "destructive" });
@@ -185,219 +352,253 @@ const CreateInvoice = () => {
     }
   };
 
-  const formatCurrency = (amount: number) =>
-    `KES ${amount.toLocaleString("en-KE", { minimumFractionDigits: 2 })}`;
-
   return (
     <AppShell>
-      <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="space-y-6 max-w-3xl mx-auto">
+
         {/* Header */}
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => navigate("/invoices")} className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Back
+            <ArrowLeft className="h-4 w-4" />Back
           </Button>
           <div>
             <h1 className="text-2xl font-bold">New Invoice</h1>
-            <p className="text-muted-foreground text-sm">Fill in the details below</p>
+            <p className="text-sm text-muted-foreground">
+              {vatRegistered
+                ? "Amounts are VAT-inclusive — VAT is back-calculated automatically"
+                : "VAT not applicable — your business is not VAT registered"}
+            </p>
           </div>
         </div>
 
-        {/* Business Selector */}
+        {/* Customer */}
         <div className="rounded-xl border bg-card p-6 space-y-4">
-          <div className="flex items-center gap-2">
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-            <h2 className="font-semibold text-base">Your Business</h2>
-          </div>
-          {!showNewBusiness ? (
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label>Select Business</Label>
-                <select
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                  value={businessId}
-                  onChange={(e) => handleBusinessChange(e.target.value)}
-                >
-                  {businesses.map(b => (
-                    <option key={b.id} value={b.id}>{b.business_name}</option>
-                  ))}
-                </select>
-              </div>
-              <button onClick={() => setShowNewBusiness(true)} className="text-sm text-primary hover:underline">
-                + Add new business
+          <h2 className="font-semibold text-base">Customer <span className="text-muted-foreground text-xs font-normal">(all fields optional)</span></h2>
+
+          {matchedContact && (
+            <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">
+              <Check className="h-4 w-4 shrink-0" />
+              Existing customer matched: <strong className="ml-1">{matchedContact.name}</strong>
+              <button
+                onClick={() => { setMatchedContact(null); setContactId(null); }}
+                className="ml-auto text-xs underline"
+              >
+                Clear
               </button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label>Business Name *</Label>
-                <Input value={newBusinessName} onChange={(e) => setNewBusinessName(e.target.value)} placeholder="Enter business name" />
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" onClick={saveNewBusiness}>Save Business</Button>
-                <Button size="sm" variant="outline" onClick={() => setShowNewBusiness(false)}>Cancel</Button>
-              </div>
             </div>
           )}
-        </div>
 
-        {/* Customer Section */}
-        <div className="rounded-xl border bg-card p-6 space-y-4">
-          <h2 className="font-semibold text-base">Customer</h2>
-          {!showNewContact ? (
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label>Select Customer</Label>
-                <select
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                  value={contactId}
-                  onChange={(e) => setContactId(e.target.value)}
-                >
-                  <option value="">-- Select a customer --</option>
-                  {contacts.map(c => (
-                    <option key={c.id} value={c.id}>{c.name} {c.email ? `— ${c.email}` : ""}</option>
-                  ))}
-                </select>
-              </div>
-              <button onClick={() => setShowNewContact(true)} className="text-sm text-primary hover:underline">
-                + Add new customer
-              </button>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {/* Name */}
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <User className="h-3.5 w-3.5" />Name
+              </Label>
+              <Input
+                placeholder="Customer name"
+                value={clientName}
+                onChange={(e) => setClientName(e.target.value)}
+              />
             </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Name *</Label>
-                  <Input value={newContact.name} onChange={(e) => setNewContact({ ...newContact, name: e.target.value })} placeholder="Customer name" />
+
+            {/* Phone */}
+            <div className="space-y-1.5 relative" ref={phoneRef}>
+              <Label>Phone</Label>
+              <Input
+                placeholder="07XXXXXXXX"
+                value={clientPhone}
+                onChange={(e) => handlePhoneChange(e.target.value)}
+                onFocus={() => phoneSuggestions.length > 0 && setShowPhoneSugg(true)}
+              />
+              {hasPhone && !matchedContact && (
+                <p className="text-xs text-green-600">→ STK Push will fire on save</p>
+              )}
+              {showPhoneSugg && phoneSuggestions.length > 0 && (
+                <div className="absolute z-20 top-full mt-1 w-full rounded-md border bg-popover shadow-lg overflow-hidden">
+                  {phoneSuggestions.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => selectContact(c)}
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted border-b last:border-0"
+                    >
+                      <p className="font-medium">{c.name || "—"}</p>
+                      <p className="text-xs text-muted-foreground">{c.phone}{c.email ? ` · ${c.email}` : ""}</p>
+                    </button>
+                  ))}
                 </div>
-                <div className="space-y-1.5">
-                  <Label>Email</Label>
-                  <Input type="email" value={newContact.email} onChange={(e) => setNewContact({ ...newContact, email: e.target.value })} placeholder="customer@email.com" />
+              )}
+            </div>
+
+            {/* Email */}
+            <div className="space-y-1.5 relative" ref={emailRef}>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                placeholder="customer@email.com"
+                value={clientEmail}
+                onChange={(e) => handleEmailChange(e.target.value)}
+                onFocus={() => emailSuggestions.length > 0 && setShowEmailSugg(true)}
+              />
+              {hasEmail && !matchedContact && (
+                <p className="text-xs text-green-600">→ Invoice email will be queued</p>
+              )}
+              {showEmailSugg && emailSuggestions.length > 0 && (
+                <div className="absolute z-20 top-full mt-1 w-full rounded-md border bg-popover shadow-lg overflow-hidden">
+                  {emailSuggestions.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => selectContact(c)}
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted border-b last:border-0"
+                    >
+                      <p className="font-medium">{c.name || "—"}</p>
+                      <p className="text-xs text-muted-foreground">{c.email}{c.phone ? ` · ${c.phone}` : ""}</p>
+                    </button>
+                  ))}
                 </div>
-                <div className="space-y-1.5">
-                  <Label>Phone</Label>
-                  <Input value={newContact.phone} onChange={(e) => setNewContact({ ...newContact, phone: e.target.value })} placeholder="07XXXXXXXX" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Address</Label>
-                  <Input value={newContact.address} onChange={(e) => setNewContact({ ...newContact, address: e.target.value })} placeholder="Nairobi, Kenya" />
-                </div>
-              </div>
-              <button onClick={() => setShowNewContact(false)} className="text-sm text-muted-foreground hover:underline">
-                ← Select existing customer
-              </button>
+              )}
+            </div>
+          </div>
+
+          {vatRegistered && (
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Customer KRA PIN (optional — required for eTIMS)</Label>
+              <Input placeholder="A123456789Z" className="max-w-xs font-mono uppercase" />
             </div>
           )}
         </div>
 
         {/* Invoice Details */}
         <div className="rounded-xl border bg-card p-6 space-y-4">
-          <h2 className="font-semibold text-base">Invoice Details</h2>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label>Issue Date</Label>
-              <Input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
-            </div>
+          <h2 className="font-semibold text-base">Details</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label>Due Date</Label>
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label>Payment Method</Label>
-              <select className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+              <select
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+              >
                 <option value="mpesa">M-Pesa</option>
                 <option value="bank">Bank Transfer</option>
                 <option value="cash">Cash</option>
                 <option value="cheque">Cheque</option>
               </select>
             </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Input placeholder="Payment terms, reference..." value={notes} onChange={(e) => setNotes(e.target.value)} />
+            </div>
           </div>
         </div>
 
         {/* Line Items */}
         <div className="rounded-xl border bg-card p-6 space-y-4">
-          <h2 className="font-semibold text-base">Line Items</h2>
+          <h2 className="font-semibold text-base">Items</h2>
+
+          <div className={`hidden md:grid gap-2 text-xs font-medium text-muted-foreground uppercase px-1 ${vatRegistered ? "grid-cols-12" : "grid-cols-10"}`}>
+            <div className="col-span-5">Description</div>
+            <div className="col-span-2 text-center">Qty</div>
+            <div className="col-span-2 text-right">{vatRegistered ? "Amount (incl. VAT)" : "Amount (KES)"}</div>
+            {vatRegistered && <div className="col-span-2 text-center">VAT</div>}
+            <div className="col-span-1" />
+          </div>
+
           <div className="space-y-3">
-            <div className="hidden md:grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground uppercase px-1">
-              <div className="col-span-4">Description</div>
-              <div className="col-span-2">Qty</div>
-              <div className="col-span-2">Unit Price</div>
-              <div className="col-span-2">VAT</div>
-              <div className="col-span-1">Total</div>
-              <div className="col-span-1"></div>
-            </div>
             {items.map((item, index) => (
-              <div key={index} className="grid grid-cols-12 gap-2 items-center">
-                <div className="col-span-12 md:col-span-4">
-                  <Input placeholder="Item description" value={item.description} onChange={(e) => updateItem(index, "description", e.target.value)} />
+              <div key={index} className="space-y-1">
+                <div className={`grid gap-2 items-center ${vatRegistered ? "grid-cols-12" : "grid-cols-10"}`}>
+                  <div className="col-span-12 md:col-span-5">
+                    <Input
+                      placeholder="e.g. Web design services"
+                      value={item.description}
+                      onChange={(e) => updateItem(index, "description", e.target.value)}
+                    />
+                  </div>
+                  <div className="col-span-4 md:col-span-2">
+                    <Input
+                      type="number" min="1" placeholder="Qty"
+                      value={item.quantity}
+                      onChange={(e) => updateItem(index, "quantity", parseFloat(e.target.value) || 1)}
+                    />
+                  </div>
+                  <div className="col-span-5 md:col-span-2">
+                    <Input
+                      type="number" min="0" placeholder="0.00"
+                      value={item.amount_incl || ""}
+                      onChange={(e) => updateItem(index, "amount_incl", parseFloat(e.target.value) || 0)}
+                    />
+                  </div>
+                  {vatRegistered && (
+                    <div className="col-span-5 md:col-span-2">
+                      <select
+                        className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                        value={item.tax_code}
+                        onChange={(e) => updateItem(index, "tax_code", e.target.value)}
+                      >
+                        <option value="A">VAT 16%</option>
+                        <option value="B">Exempt</option>
+                      </select>
+                    </div>
+                  )}
+                  <div className="col-span-1 flex justify-end">
+                    <button
+                      onClick={() => removeItem(index)}
+                      disabled={items.length === 1}
+                      className="text-muted-foreground hover:text-red-500 transition-colors disabled:opacity-30"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-                <div className="col-span-3 md:col-span-2">
-                  <Input type="number" min="1" placeholder="Qty" value={item.quantity} onChange={(e) => updateItem(index, "quantity", parseFloat(e.target.value) || 0)} />
-                </div>
-                <div className="col-span-4 md:col-span-2">
-                  <Input type="number" min="0" placeholder="Price" value={item.unit_price} onChange={(e) => updateItem(index, "unit_price", parseFloat(e.target.value) || 0)} />
-                </div>
-                <div className="col-span-4 md:col-span-2">
-                  <select className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={item.tax_code} onChange={(e) => updateItem(index, "tax_code", e.target.value)}>
-                    <option value="A">VAT 16%</option>
-                    <option value="B">Exempt</option>
-                    <option value="C">Zero Rated</option>
-                  </select>
-                </div>
-                <div className="col-span-4 md:col-span-1 text-sm font-medium text-right">
-                  {formatCurrency(item.total)}
-                </div>
-                <div className="col-span-1 flex justify-end">
-                  <button onClick={() => removeItem(index)} className="text-muted-foreground hover:text-red-500 transition-colors">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
+                {vatRegistered && item.tax_code === "A" && item.amount_incl > 0 && (
+                  <p className="text-xs text-muted-foreground pl-1">
+                    Excl. VAT: {fmt(item.unit_price * item.quantity)} · VAT: {fmt(item.vat_amount)} · Total: {fmt(item.total)}
+                  </p>
+                )}
               </div>
             ))}
           </div>
+
           <button onClick={addItem} className="flex items-center gap-2 text-sm text-primary hover:underline">
-            <Plus className="h-4 w-4" />
-            Add line item
+            <Plus className="h-4 w-4" />Add line item
           </button>
+
           <div className="border-t pt-4 space-y-2 ml-auto max-w-xs">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Subtotal</span>
-              <span>{formatCurrency(subtotal)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">VAT (16%)</span>
-              <span>{formatCurrency(vatAmount)}</span>
-            </div>
+            {vatRegistered && (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Subtotal (excl. VAT)</span>
+                  <span>{fmt(subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">VAT</span>
+                  <span>{fmt(totalVat)}</span>
+                </div>
+              </>
+            )}
             <div className="flex justify-between font-bold text-base border-t pt-2">
               <span>Total</span>
-              <span>{formatCurrency(total)}</span>
+              <span className="text-primary">{fmt(grandTotal)}</span>
             </div>
           </div>
-        </div>
-
-        {/* Notes */}
-        <div className="rounded-xl border bg-card p-6 space-y-3">
-          <h2 className="font-semibold text-base">Notes</h2>
-          <textarea
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm min-h-[80px] focus:outline-none focus:ring-2 focus:ring-primary"
-            placeholder="Payment instructions, terms, or any other notes..."
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
         </div>
 
         {/* Actions */}
         <div className="flex gap-3 justify-end pb-6">
           <Button variant="outline" onClick={() => navigate("/invoices")} disabled={saving}>Cancel</Button>
           <Button variant="outline" onClick={() => handleSave(false)} disabled={saving} className="gap-2">
-            <Save className="h-4 w-4" />
-            Save Draft
+            <Save className="h-4 w-4" />Save Draft
           </Button>
-          <Button onClick={() => handleSave(true)} disabled={saving} className="gap-2">
+          <Button onClick={() => handleSave(true)} disabled={saving} className="gap-2 bg-green-600 hover:bg-green-700">
             <Send className="h-4 w-4" />
-            {saving ? "Saving..." : "Save & Send"}
+            {saving ? "Saving..." : getActionLabel()}
           </Button>
         </div>
+
       </div>
     </AppShell>
   );
