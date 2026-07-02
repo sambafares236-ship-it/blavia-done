@@ -1,22 +1,8 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard,
-  Gauge,
-  Wallet,
-  Users,
-  FileBarChart2,
-  Scale,
-  PieChart,
-  Sparkles,
-  Settings,
-  LogOut,
-  ArrowUpRight,
-  CalendarClock,
-  Landmark,
-  FileCheck,
-  FileText,
-  X,
-  Smartphone,
+  LayoutDashboard, Gauge, Wallet, Users, FileBarChart2,
+  Scale, PieChart, Sparkles, Settings, LogOut, ArrowUpRight,
+  CalendarClock, Landmark, FileText, X, Smartphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/blavia-logo.png";
@@ -34,7 +20,6 @@ const links = [
   { to: "/tax", label: "Tax Center", icon: Scale },
   { to: "/reports", label: "Financial Reports", icon: FileBarChart2 },
   { to: "/analytics", label: "Analytics", icon: PieChart },
-  { to: "/etims-settings", label: "eTIMS", icon: FileCheck },
   { to: "/mpesa-settings", label: "M-Pesa Setup", icon: Smartphone },
 ];
 
@@ -44,7 +29,7 @@ interface SideNavProps {
 }
 
 export const SideNav = ({ open = false, onClose }: SideNavProps) => {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, business, signOut } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -53,49 +38,29 @@ export const SideNav = ({ open = false, onClose }: SideNavProps) => {
     navigate("/login", { replace: true });
   };
 
-  const handleNavClick = () => {
-    onClose?.();
-  };
+  const handleNavClick = () => { onClose?.(); };
 
-  const fullName =
-    profile?.full_name ?? (user?.user_metadata?.full_name as string | undefined);
-  const businessName =
-    profile?.company_name ?? (user?.user_metadata?.company_name as string | undefined);
+  const fullName = profile?.full_name ?? (user?.user_metadata?.full_name as string | undefined);
+  const businessName = business?.business_name ?? profile?.company_name ?? (user?.user_metadata?.company_name as string | undefined);
   const initials =
-    fullName
-      ?.split(" ")
-      .map((p) => p[0])
-      .filter(Boolean)
-      .slice(0, 2)
-      .join("")
-      .toUpperCase() || (user?.email?.[0]?.toUpperCase() ?? "U");
+    fullName?.split(" ").map((p) => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase()
+    || (user?.email?.[0]?.toUpperCase() ?? "U");
   const displayName = businessName ?? fullName ?? user?.email ?? "User";
 
   return (
     <>
       {open && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
-          onClick={onClose}
-          aria-hidden="true"
-        />
+        <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={onClose} aria-hidden="true" />
       )}
 
-      <aside
-        className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-72 max-w-[80vw] flex-col bg-sidebar text-sidebar-foreground transition-transform duration-300 ease-in-out",
-          open ? "translate-x-0" : "-translate-x-full",
-          "md:static md:z-auto md:flex md:w-60 md:max-w-none md:translate-x-0 md:shrink-0"
-        )}
-      >
-        {/* Logo + mobile close button */}
+      <aside className={cn(
+        "fixed inset-y-0 left-0 z-50 flex w-72 max-w-[80vw] flex-col bg-sidebar text-sidebar-foreground transition-transform duration-300 ease-in-out",
+        open ? "translate-x-0" : "-translate-x-full",
+        "md:static md:z-auto md:flex md:w-60 md:max-w-none md:translate-x-0 md:shrink-0"
+      )}>
+        {/* Logo */}
         <div className="relative w-full overflow-hidden shrink-0">
-          <img
-            src={logo}
-            alt="BLAVIA"
-            className="w-full object-cover"
-            style={{ height: '100px' }}
-          />
+          <img src={logo} alt="BLAVIA" className="w-full object-cover" style={{ height: "100px" }} />
           <button
             onClick={onClose}
             aria-label="Close menu"
@@ -105,7 +70,7 @@ export const SideNav = ({ open = false, onClose }: SideNavProps) => {
           </button>
         </div>
 
-        {/* Nav */}
+        {/* Nav links */}
         <nav className="flex-1 space-y-1 px-3 py-3 overflow-y-auto">
           {links.map(({ to, label, icon: Icon, end }) => (
             <NavLink
@@ -118,7 +83,7 @@ export const SideNav = ({ open = false, onClose }: SideNavProps) => {
                   "group flex items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   isActive
                     ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-white",
+                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-white"
                 )
               }
             >
@@ -150,16 +115,11 @@ export const SideNav = ({ open = false, onClose }: SideNavProps) => {
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-white">{displayName}</p>
-              <p className="truncate text-xs text-sidebar-foreground/60">
-                {fullName ?? user?.email ?? "Member"}
-              </p>
+              <p className="truncate text-xs text-sidebar-foreground/60">{fullName ?? user?.email ?? "Member"}</p>
             </div>
           </div>
           <button
-            onClick={() => {
-              handleNavClick();
-              navigate("/settings");
-            }}
+            onClick={() => { handleNavClick(); navigate("/settings"); }}
             className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-white"
           >
             <Settings className="h-4 w-4" />

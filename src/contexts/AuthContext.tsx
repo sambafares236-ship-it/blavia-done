@@ -1,5 +1,5 @@
-﻿import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
-import type { Session, User } from "@supabase/supabase-js";
+﻿import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
 interface Profile {
@@ -8,16 +8,27 @@ interface Profile {
   full_name: string | null;
   company_name: string | null;
   phone: string | null;
-  role: string | null;
+  role: string;
   business_id: string | null;
 }
 
-export interface Business {
+interface Business {
   id: string;
-  business_name: string | null;
+  business_name: string;
   business_category: string | null;
   annual_turnover: number | null;
   vat_registered: boolean;
+  currency: string | null;
+  alert_threshold: number | null;
+  owner_id: string;
+  owner_email: string | null;
+  whatsapp_number: string | null;
+  logo_url: string | null;
+  welcome_sent_at: string | null;
+  street_address: string | null;
+  city: string | null;
+  county: string | null;
+  postal_code: string | null;
 }
 
 interface AuthContextType {
@@ -31,7 +42,18 @@ interface AuthContextType {
   refreshProfile: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  session: null,
+  profile: null,
+  business: null,
+  loading: true,
+  profileLoading: false,
+  signOut: async () => {},
+  refreshProfile: async () => {},
+});
+
+export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -41,22 +63,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
 
-  const loadBusiness = useCallback(async (businessId: string) => {
-    const { data, error } = await supabase
+  const loadBusiness = async (businessId: string) => {
+    const { data } = await supabase
       .from("businesses")
-      .select("id, business_name, business_category, annual_turnover, vat_registered")
+      .select("*")
       .eq("id", businessId)
-      .maybeSingle();
-    if (error) {
-      console.error("business load error:", error);
-      setBusiness(null);
-    } else {
-      setBusiness((data as Business) ?? null);
-    }
-  }, []);
+      .single();
+    if (data) setBusiness(data as Business);
+  };
 
-  const loadProfile = useCallback(async (userId: string, email?: string) => {
-    console.log("Loading profile for user:", userId, "email:", email);
+  const loadProfile = async (userId: string, email?: string | null, currentSession?: Session | null) => {
     setProfileLoading(true);
     try {
       const { data, error } = await supabase
@@ -66,22 +82,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .maybeSingle();
 
       if (error) {
-        console.error("profile load error:", error);
         setProfile(null);
         setBusiness(null);
         return;
       }
 
       if (!data) {
-        console.log("No profile found, creating one...");
+        // New user — create business with real data from signup metadata
+        const metadata = currentSession?.user?.user_metadata || {};
+        const companyName = metadata.company_name || "My Business";
+        const phone = metadata.phone || null;
+
         const { data: bizData, error: bizError } = await supabase
           .from("businesses")
-          .insert({ business_name: "My Business", owner_id: userId })
+          .insert({
+            business_name: companyName,
+            owner_id: userId,
+            owner_email: email ?? null,
+            whatsapp_number: phone,
+          })
           .select()
           .single();
 
         if (bizError) {
-          console.error("business create error:", bizError);
           setProfile(null);
           setBusiness(null);
           return;
@@ -92,7 +115,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           .insert({
             id: userId,
             email: email ?? null,
-            full_name: null,
+            full_name: metadata.full_name ?? null,
+            company_name: companyName,
+            phone: phone,
             role: "owner",
             business_id: bizData.id,
           })
@@ -100,7 +125,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           .single();
 
         if (profileError) {
-          console.error("profile create error:", profileError);
           setProfile(null);
           setBusiness(null);
           return;
@@ -117,10 +141,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (p.business_id) {
         await loadBusiness(p.business_id);
       } else {
-        console.log("Profile has no business_id, creating business...");
+        // Profile exists but no business — create one
+        const metadata = currentSession?.user?.user_metadata || {};
+        const companyName = metadata.company_name || "My Business";
+        const phone = metadata.phone || null;
+
         const { data: bizData, error: bizError } = await supabase
           .from("businesses")
-          .insert({ business_name: "My Business", owner_id: userId })
+          .insert({
+            business_name: companyName,
+            owner_id: userId,
+            owner_email: email ?? null,
+            whatsapp_number: phone,
+          })
           .select()
           .single();
 
@@ -138,68 +171,54 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setProfileLoading(false);
     }
-  }, [loadBusiness]);
+  };
+
+  const refreshProfile = async () => {
+    if (user) await loadProfile(user.id, user.email, session);
+  };
 
   useEffect(() => {
-    console.log("Initializing auth...");
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      console.log("Auth state changed:", event);
-      setSession(newSession);
-      setUser(newSession?.user ?? null);
-      setLoading(false);
-      if (newSession?.user) {
-        setTimeout(() => loadProfile(newSession.user.id, newSession.user.email), 0);
-      } else {
-        setProfile(null);
-        setBusiness(null);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        loadProfile(session.user.id, session.user.email, session);
       }
+      setLoading(false);
     });
 
-    supabase.auth.getSession().then(({ data: { session: existingSession } }) => {
-      setSession(existingSession);
-      setUser(existingSession?.user ?? null);
-      setLoading(false);
-      if (existingSession?.user) {
-        loadProfile(existingSession.user.id, existingSession.user.email);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          loadProfile(session.user.id, session.user.email, session);
+        } else {
+          setProfile(null);
+          setBusiness(null);
+        }
+        setLoading(false);
       }
-    });
+    );
 
     return () => subscription.unsubscribe();
-  }, [loadProfile]);
+  }, []);
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    setProfile(null);
-    setBusiness(null);
     setUser(null);
     setSession(null);
+    setProfile(null);
+    setBusiness(null);
   };
 
-  const refreshProfile = useCallback(async () => {
-    if (user) await loadProfile(user.id, user.email);
-  }, [user, loadProfile]);
-
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        session,
-        profile,
-        business,
-        loading,
-        profileLoading,
-        signOut,
-        refreshProfile,
-      }}
-    >
+    <AuthContext.Provider value={{
+      user, session, profile, business,
+      loading, profileLoading,
+      signOut, refreshProfile,
+    }}>
       {children}
     </AuthContext.Provider>
   );
-};
-
-export const useAuth = () => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
 };
