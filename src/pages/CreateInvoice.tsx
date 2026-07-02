@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/use-toast";
-import { Plus, Trash2, ArrowLeft, Save, Send, User, Check } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, Save, Send, User, Check, Banknote } from "lucide-react";
 
 interface LineItem {
   description: string;
@@ -352,6 +352,128 @@ const CreateInvoice = () => {
     }
   };
 
+  // ── Cash payment handler ──────────────────────────────────────────────────
+  const handleCashSave = async () => {
+    if (!businessId) {
+      toast({ title: "Business not loaded", variant: "destructive" });
+      return;
+    }
+    if (items.some(i => !i.description.trim())) {
+      toast({ title: "Please fill in all item descriptions", variant: "destructive" });
+      return;
+    }
+    if (grandTotal <= 0) {
+      toast({ title: "Invoice total must be greater than zero", variant: "destructive" });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Resolve contact — default to "Cash Customer"
+      let finalContactId: string | null = contactId;
+      if (!finalContactId) {
+        const name = clientName.trim() || "Cash Customer";
+        const { data: existing } = await supabase
+          .from("contacts")
+          .select("id")
+          .eq("business_id", businessId)
+          .eq("name", name)
+          .limit(1)
+          .single();
+
+        if (existing) {
+          finalContactId = existing.id;
+        } else {
+          const { data: created } = await supabase
+            .from("contacts")
+            .insert({
+              business_id: businessId,
+              name,
+              phone: clientPhone || null,
+              email: clientEmail || null,
+            })
+            .select("id")
+            .single();
+          finalContactId = created?.id ?? null;
+        }
+      }
+
+      const { data: invNum } = await supabase.rpc("generate_invoice_number", {
+        p_business_id: businessId,
+      });
+
+      const now = new Date().toISOString();
+
+      // Create invoice as paid
+      const { data: invoice, error: invError } = await supabase
+        .from("invoices")
+        .insert({
+          business_id: businessId,
+          contact_id: finalContactId,
+          invoice_number: invNum,
+          status: "paid",
+          issue_date: todayStr(),
+          due_date: dueDate || null,
+          subtotal: parseFloat(subtotal.toFixed(2)),
+          vat_amount: parseFloat(totalVat.toFixed(2)),
+          total: parseFloat(grandTotal.toFixed(2)),
+          notes: notes || null,
+          payment_method: "cash",
+          customer_email: clientEmail || null,
+          customer_phone: clientPhone || null,
+          sent_at: now,
+          paid_at: now,
+        })
+        .select()
+        .single();
+
+      if (invError) throw invError;
+
+      // Insert line items
+      await supabase.from("invoice_items").insert(
+        items.map(item => ({
+          invoice_id: invoice.id,
+          business_id: businessId,
+          description: item.description,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          tax_code: item.tax_code,
+          vat_amount: item.vat_amount,
+          total: item.total,
+        }))
+      );
+
+      // Auto-create income transaction
+      const { error: txnError } = await supabase.from("transactions").insert({
+        business_id: businessId,
+        amount: parseFloat(grandTotal.toFixed(2)),
+        txn_type: "Income",
+        txn_date: todayStr(),
+        narration: `Cash payment — ${invNum}`,
+        category: "Sales",
+        ref_number: invNum,
+        source_bank: "Cash",
+        status: "Approved",
+        approved_at: now,
+        input_source: "manual",
+      });
+
+      if (txnError) {
+        console.error("Transaction create error:", txnError);
+        toast({ title: "Invoice saved but transaction recording failed", variant: "destructive" });
+      } else {
+        toast({ title: "Cash invoice saved!", description: `${invNum} marked as paid and recorded in transactions.` });
+      }
+
+      navigate(`/invoices/${invoice.id}`);
+    } catch (err: any) {
+      toast({ title: "Error saving invoice", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+
   return (
     <AppShell>
       <div className="space-y-6 max-w-3xl mx-auto">
@@ -596,6 +718,10 @@ const CreateInvoice = () => {
           <Button onClick={() => handleSave(true)} disabled={saving} className="gap-2 bg-green-600 hover:bg-green-700">
             <Send className="h-4 w-4" />
             {saving ? "Saving..." : getActionLabel()}
+          </Button>
+          <Button onClick={handleCashSave} disabled={saving} className="gap-2 bg-amber-600 hover:bg-amber-700">
+            <Banknote className="h-4 w-4" />
+            {saving ? "Saving..." : "Paid — Cash"}
           </Button>
         </div>
 
