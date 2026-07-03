@@ -36,7 +36,7 @@ const fmtCurrency = (n: number) =>
   new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(n ?? 0);
 
 const Index = () => {
-  const { user, profile } = useAuth();
+  const { user, profile, business } = useAuth();
   const navigate = useNavigate();
   const greetingName =
     profile?.full_name?.split(" ")[0] ??
@@ -260,7 +260,7 @@ const Index = () => {
           <TaxObligationsCard />
           <FinancialReportsCard />
           <LivePaymentTrackingCard txns={allTxns} />
-          <TaxOverviewCard txns={allTxns} />
+          <TaxOverviewCard txns={allTxns} business={business} />
           <PayrollQuickActionsCard />
         </section>
 

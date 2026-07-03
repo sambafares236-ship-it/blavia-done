@@ -229,7 +229,34 @@ export const LivePaymentTrackingCard = ({
 /*                              Tax Overview Card                             */
 /* -------------------------------------------------------------------------- */
 
-export const TaxOverviewCard = ({ txns }: { txns: Transaction[] }) => {
+// Same regime bands as the Tax Center (src/pages/Tax.tsx) — kept in sync so
+// the Dashboard estimate and the full Tax Center never disagree about which
+// taxes actually apply to this business.
+const TOT_MIN = 1_000_000;
+const TOT_MAX = 25_000_000;
+
+type TaxRegime = "exempt" | "tot" | "corporate" | "vat";
+
+const getTaxRegime = (vatRegistered: boolean, annualTurnover: number): TaxRegime => {
+  if (vatRegistered) return "vat";
+  if (annualTurnover >= TOT_MAX) return "corporate";
+  if (annualTurnover >= TOT_MIN) return "tot";
+  return "exempt";
+};
+
+const regimeLabel: Record<TaxRegime, string> = {
+  exempt: "Tax Exempt",
+  tot: "Turnover Tax (TOT)",
+  corporate: "Corporate Tax",
+  vat: "VAT Registered",
+};
+
+interface TaxOverviewBusiness {
+  vat_registered: boolean | null;
+  annual_turnover: number | null;
+}
+
+export const TaxOverviewCard = ({ txns, business }: { txns: Transaction[]; business?: TaxOverviewBusiness | null }) => {
   const approved = txns.filter(isApproved);
   const monthStart = new Date();
   monthStart.setDate(1);
@@ -248,43 +275,23 @@ export const TaxOverviewCard = ({ txns }: { txns: Transaction[] }) => {
     .reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
   const profit = Math.max(income - expense, 0);
 
-  const vat = income * 0.16;
-  const corp = profit * 0.3;
-  const wht = income * 0.05;
-  const tot = income * 0.03;
+  const vatRegistered = business?.vat_registered ?? false;
+  const annualTurnover = business?.annual_turnover ?? 0;
+  const regime = getTaxRegime(vatRegistered, annualTurnover);
 
-  const taxes = [
-    {
-      name: "VAT Liability",
-      rate: "16%",
-      amount: vat,
-      icon: Receipt,
-      tone: "text-shield bg-shield/10 border-shield/20",
-    },
-    {
-      name: "Corporate Tax",
-      rate: "30%",
-      amount: corp,
-      icon: Building2,
-      tone: "text-navy bg-navy/10 border-navy/20",
-    },
-    {
-      name: "Withholding Tax",
-      rate: "5% / 20%",
-      amount: wht,
-      icon: Landmark,
-      tone: "text-warning bg-warning/10 border-warning/20",
-    },
-    {
-      name: "Turnover Tax",
-      rate: "3%",
-      amount: tot,
-      icon: PiggyBank,
-      tone: "text-success bg-success/10 border-success/20",
-    },
-  ];
+  const taxes: { name: string; rate: string; amount: number; icon: typeof Receipt; tone: string }[] = [];
+  if (regime === "vat") {
+    taxes.push({ name: "VAT Liability", rate: "16%", amount: income * 0.16, icon: Receipt, tone: "text-shield bg-shield/10 border-shield/20" });
+    taxes.push({ name: "Corporate Tax", rate: "30%", amount: profit * 0.3, icon: Building2, tone: "text-navy bg-navy/10 border-navy/20" });
+  } else if (regime === "corporate") {
+    taxes.push({ name: "Corporate Tax", rate: "30%", amount: profit * 0.3, icon: Building2, tone: "text-navy bg-navy/10 border-navy/20" });
+  } else if (regime === "tot") {
+    taxes.push({ name: "Turnover Tax", rate: "3%", amount: income * 0.03, icon: PiggyBank, tone: "text-success bg-success/10 border-success/20" });
+  }
+  // Withholding Tax can apply regardless of regime, same as the Tax Center.
+  taxes.push({ name: "Withholding Tax", rate: "5% / 20%", amount: income * 0.05, icon: Landmark, tone: "text-warning bg-warning/10 border-warning/20" });
 
-  const totalLiability = vat + corp + wht + tot;
+  const totalLiability = taxes.reduce((s, t) => s + t.amount, 0);
 
   return (
     <Card className="border border-border/60 bg-card p-5 shadow-card">
@@ -294,11 +301,17 @@ export const TaxOverviewCard = ({ txns }: { txns: Transaction[] }) => {
             Tax Overview
           </h3>
           <p className="text-xs text-muted-foreground">
-            Estimated month-to-date liability (KRA)
+            {regimeLabel[regime]} · Estimated month-to-date liability (KRA)
           </p>
         </div>
         <Scale className="h-5 w-5 text-muted-foreground" />
       </div>
+
+      {regime === "exempt" && (
+        <p className="mt-3 rounded-lg border border-border/60 bg-background/40 px-3 py-2 text-xs text-muted-foreground">
+          Annual turnover below KES 1M — no income tax obligation yet. Set your turnover in Settings if this is out of date.
+        </p>
+      )}
 
       <ul className="mt-4 space-y-2">
         {taxes.map((t) => {
@@ -342,6 +355,14 @@ export const TaxOverviewCard = ({ txns }: { txns: Transaction[] }) => {
           {fmt(totalLiability)}
         </span>
       </div>
+
+      <Link
+        to="/tax"
+        className="mt-4 flex items-center justify-center gap-1.5 rounded-lg border border-border bg-background/40 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/5"
+      >
+        View Tax Center
+        <ArrowRight className="h-4 w-4" />
+      </Link>
     </Card>
   );
 };
