@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, Trash2, Wallet, Scale } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Pencil, Plus, Trash2, Wallet, Scale, Hourglass, Receipt } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
 import { AssetLiabilityDialog, type Mode } from "@/components/balance/AssetLiabilityDialog";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
 const fmt = (n: number) =>
@@ -25,9 +27,13 @@ interface Row {
 }
 
 export default function BalanceSheetPage() {
+  const { profile } = useAuth();
+  const navigate = useNavigate();
   const [assets, setAssets] = useState<Row[]>([]);
   const [liabilities, setLiabilities] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [liveReceivable, setLiveReceivable] = useState({ total: 0, count: 0 });
+  const [livePayable, setLivePayable] = useState({ total: 0, count: 0 });
   const [dialog, setDialog] = useState<{ open: boolean; mode: Mode; row?: Row }>({
     open: false, mode: "asset",
   });
@@ -51,6 +57,31 @@ export default function BalanceSheetPage() {
 
   useEffect(() => { load(); }, []);
 
+  // Live totals from Receivables/Payables — same source data as those pages,
+  // not synced into the assets/liabilities tables to avoid a second source of truth.
+  useEffect(() => {
+    if (!profile?.business_id) return;
+    const loadLiveTotals = async () => {
+      const [invRes, payRes] = await Promise.all([
+        supabase.from("invoices").select("total").eq("business_id", profile.business_id).in("status", ["sent", "overdue"]),
+        supabase.from("payments").select("amount").eq("business_id", profile.business_id).eq("status", "pending"),
+      ]);
+      if (!invRes.error && invRes.data) {
+        setLiveReceivable({
+          total: invRes.data.reduce((s, r) => s + (Number(r.total) || 0), 0),
+          count: invRes.data.length,
+        });
+      }
+      if (!payRes.error && payRes.data) {
+        setLivePayable({
+          total: payRes.data.reduce((s, r) => s + (Number(r.amount) || 0), 0),
+          count: payRes.data.length,
+        });
+      }
+    };
+    loadLiveTotals();
+  }, [profile?.business_id]);
+
   const handleDelete = async (table: "assets" | "liabilities", id: string) => {
     if (!confirm(`Delete this ${table === "assets" ? "asset" : "liability"}?`)) return;
     const { error } = await supabase.from(table).delete().eq("id", id);
@@ -63,10 +94,10 @@ export default function BalanceSheetPage() {
   };
 
   const totals = useMemo(() => {
-    const a = assets.reduce((s, r) => s + Number(r.value || 0), 0);
-    const l = liabilities.reduce((s, r) => s + Number(r.value || 0), 0);
+    const a = assets.reduce((s, r) => s + Number(r.value || 0), 0) + liveReceivable.total;
+    const l = liabilities.reduce((s, r) => s + Number(r.value || 0), 0) + livePayable.total;
     return { a, l, net: a - l };
-  }, [assets, liabilities]);
+  }, [assets, liabilities, liveReceivable.total, livePayable.total]);
 
   if (loading) {
     return (
@@ -132,6 +163,20 @@ export default function BalanceSheetPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                <TableRow className="cursor-pointer bg-emerald-50/50 hover:bg-emerald-50" onClick={() => navigate("/receivables")}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-1.5">
+                      <Hourglass className="h-3.5 w-3.5 text-emerald-600" />
+                      Accounts Receivable
+                      <span className="rounded-full border border-emerald-200 bg-emerald-100 px-1.5 py-0 text-[10px] font-medium text-emerald-700">Live</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {liveReceivable.count} unpaid invoice{liveReceivable.count !== 1 ? "s" : ""}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-sm">{fmt(liveReceivable.total)}</TableCell>
+                  <TableCell />
+                </TableRow>
                 {assets.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
@@ -180,6 +225,20 @@ export default function BalanceSheetPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                <TableRow className="cursor-pointer bg-red-50/50 hover:bg-red-50" onClick={() => navigate("/payables")}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-1.5">
+                      <Receipt className="h-3.5 w-3.5 text-destructive" />
+                      Accounts Payable
+                      <span className="rounded-full border border-red-200 bg-red-100 px-1.5 py-0 text-[10px] font-medium text-red-700">Live</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {livePayable.count} unpaid bill{livePayable.count !== 1 ? "s" : ""}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-sm text-destructive">{fmt(livePayable.total)}</TableCell>
+                  <TableCell />
+                </TableRow>
                 {liabilities.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
