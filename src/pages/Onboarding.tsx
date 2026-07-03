@@ -34,7 +34,7 @@ const Onboarding = () => {
   useEffect(() => {
     if (!business) return;
     // Already completed onboarding (e.g. user navigated back here manually) — move on.
-    if (business.annual_turnover !== null) {
+    if (business.business_category) {
       navigate("/dashboard", { replace: true });
       return;
     }

@@ -39,10 +39,11 @@ export const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // annual_turnover is null only for a business that never finished the
-  // onboarding step — gate every other protected page behind it so tax
-  // logic (Dashboard, Tax Center) never silently defaults to "exempt".
-  const needsOnboarding = business && business.annual_turnover === null;
+  // business_category has no DB default and is only ever set by the
+  // Onboarding/Settings form, so it's a reliable "never finished
+  // onboarding" signal — unlike annual_turnover, which defaults to 0 at
+  // the DB level and is therefore never actually null on a fresh signup.
+  const needsOnboarding = business && !business.business_category;
   if (needsOnboarding && location.pathname !== "/onboarding") {
     return <Navigate to="/onboarding" replace />;
   }
