@@ -6,9 +6,11 @@ import {
   ClipboardCheck,
   Download,
   Filter,
+  Hourglass,
   Search,
   TrendingUp,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { supabase, Transaction } from "@/lib/supabase";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { TransactionsTable } from "@/components/dashboard/TransactionsTable";
@@ -35,6 +37,7 @@ const fmtCurrency = (n: number) =>
 
 const Index = () => {
   const { user, profile } = useAuth();
+  const navigate = useNavigate();
   const greetingName =
     profile?.full_name?.split(" ")[0] ??
     (user?.user_metadata?.full_name as string | undefined)?.split(" ")[0] ??
@@ -44,6 +47,7 @@ const Index = () => {
   const [allTxns, setAllTxns] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [receivables, setReceivables] = useState({ outstanding: 0, overdue: 0, count: 0 });
 
   useEffect(() => {
     if (!profile?.business_id) return;
@@ -72,6 +76,25 @@ const Index = () => {
     };
 
     load();
+  }, [profile?.business_id]);
+
+  useEffect(() => {
+    if (!profile?.business_id) return;
+    const loadReceivables = async () => {
+      const { data, error } = await supabase
+        .from("invoices")
+        .select("total, due_date")
+        .eq("business_id", profile.business_id)
+        .in("status", ["sent", "overdue"]);
+      if (error || !data) return;
+      const today = new Date().toISOString().slice(0, 10);
+      const outstanding = data.reduce((s, i) => s + (Number(i.total) || 0), 0);
+      const overdue = data
+        .filter((i) => i.due_date && i.due_date < today)
+        .reduce((s, i) => s + (Number(i.total) || 0), 0);
+      setReceivables({ outstanding, overdue, count: data.length });
+    };
+    loadReceivables();
   }, [profile?.business_id]);
 
   const kpis = useMemo(() => {
@@ -202,6 +225,30 @@ const Index = () => {
             delta={kpis.netDelta}
           />
         </section>
+
+        {/* Receivables banner — cash already collected (KPIs above) vs money still owed to you */}
+        {receivables.count > 0 && (
+          <button
+            onClick={() => navigate("/receivables")}
+            className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-5 py-4 text-left shadow-card transition-colors hover:bg-muted/30"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600">
+                <Hourglass className="h-4 w-4" strokeWidth={2.25} />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {fmtCurrency(receivables.outstanding)} outstanding across {receivables.count} invoice{receivables.count !== 1 ? "s" : ""}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  Money owed to you, not yet collected
+                  {receivables.overdue > 0 && ` · ${fmtCurrency(receivables.overdue)} overdue`}
+                </p>
+              </div>
+            </div>
+            <span className="text-sm font-medium text-primary">View Receivables →</span>
+          </button>
+        )}
 
         {/* Charts */}
         <section>

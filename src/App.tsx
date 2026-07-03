@@ -21,6 +21,8 @@ import Settings from "./pages/Settings.tsx";
 import EtimsSettings from "./pages/EtimsSettings.tsx";
 import MpesaSettings from "./pages/MpesaSettings.tsx";
 import Invoices from "./pages/Invoices.tsx";
+import Receivables from "./pages/Receivables.tsx";
+import Payables from "./pages/Payables.tsx";
 import CreateInvoice from "./pages/CreateInvoice.tsx";
 import InvoiceDetail from "./pages/InvoiceDetail.tsx";
 import PublicPayInvoice from "./pages/PublicPayInvoice.tsx";
@@ -36,7 +38,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
-            {/* Public — no login required */}
+            {/* Public ï¿½ no login required */}
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
@@ -60,6 +62,8 @@ const App = () => (
             <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
             <Route path="/invoices/new" element={<ProtectedRoute><CreateInvoice /></ProtectedRoute>} />
             <Route path="/invoices/:id" element={<ProtectedRoute><InvoiceDetail /></ProtectedRoute>} />
+            <Route path="/receivables" element={<ProtectedRoute><Receivables /></ProtectedRoute>} />
+            <Route path="/payables" element={<ProtectedRoute><Payables /></ProtectedRoute>} />
 
             {/* Legacy redirects */}
             <Route path="/transactions" element={<Navigate to="/payments" replace />} />

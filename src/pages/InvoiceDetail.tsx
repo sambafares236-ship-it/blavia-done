@@ -12,6 +12,8 @@ import {
   AlertCircle, FileText, Building2, User,
   Calendar, CreditCard, Smartphone, Loader2, Mail, Copy, Shield,
 } from "lucide-react";
+import { RecordPaymentDialog } from "@/components/payments/RecordPaymentDialog";
+import { PaymentMethod } from "@/lib/instantPayments";
 
 interface Invoice {
   id: string;
@@ -86,6 +88,7 @@ const InvoiceDetail = () => {
   const [stkSent, setStkSent] = useState(false);
   const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
   const [emailSentForInvoice, setEmailSentForInvoice] = useState(false);
+  const [markPaidOpen, setMarkPaidOpen] = useState(false);
 
   useEffect(() => {
     if (id && user) {
@@ -345,13 +348,18 @@ const InvoiceDetail = () => {
     }
   };
 
-  const handleMarkPaid = async () => {
+  // Opens RecordPaymentDialog instead of flipping status directly, so the
+  // cash/M-Pesa payment actually lands in `transactions` — previously this
+  // just updated invoices.status and the money never showed up as collected.
+  const handleMarkPaid = () => setMarkPaidOpen(true);
+
+  const finalizeMarkPaid = async (method: PaymentMethod) => {
     setUpdating(true);
     const { error } = await supabase
       .from("invoices")
-      .update({ status: "paid", paid_at: new Date().toISOString() })
+      .update({ status: "paid", paid_at: new Date().toISOString(), payment_method: method.toLowerCase() })
       .eq("id", id);
-    if (error) { toast({ title: "Error updating invoice", variant: "destructive" }); }
+    if (error) { toast({ title: "Payment recorded, but invoice status update failed", description: error.message, variant: "destructive" }); }
     else { toast({ title: "Invoice marked as paid!" }); fetchInvoice(); }
     setUpdating(false);
   };
@@ -710,13 +718,25 @@ const InvoiceDetail = () => {
             {invoice.paid_at && (
               <div className="flex items-center gap-3 text-sm">
                 <div className="h-2 w-2 rounded-full bg-green-500" />
-                <span className="text-muted-foreground">Paid via M-Pesa</span>
+                <span className="text-muted-foreground">Paid{invoice.payment_method ? ` via ${invoice.payment_method}` : ""}</span>
                 <span className="font-medium">{formatDate(invoice.paid_at)}</span>
               </div>
             )}
           </div>
         </div>
       </div>
+
+      <RecordPaymentDialog
+        open={markPaidOpen}
+        onOpenChange={setMarkPaidOpen}
+        businessId={invoice.business_id}
+        title="Record Payment & Mark Invoice Paid"
+        defaultAmount={invoice.total}
+        lockAmount
+        defaultNarration={`Invoice ${invoice.invoice_number}${invoice.contacts?.name ? ` — ${invoice.contacts.name}` : ""}`}
+        defaultReference={invoice.invoice_number}
+        onRecorded={finalizeMarkPaid}
+      />
     </AppShell>
   );
 };

@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Gauge, Wallet, Users, FileBarChart2,
   Scale, PieChart, Sparkles, Settings, LogOut, ArrowUpRight,
-  CalendarClock, Landmark, FileText, X, Smartphone,
+  CalendarClock, Landmark, FileText, X, Smartphone, Hourglass, Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/blavia-logo.png";
@@ -14,6 +14,8 @@ const links = [
   { to: "/executive", label: "Executive BI", icon: Gauge },
   { to: "/payments", label: "Payments", icon: Wallet },
   { to: "/invoices", label: "Invoices", icon: FileText },
+  { to: "/receivables", label: "Receivables", icon: Hourglass },
+  { to: "/payables", label: "Payables", icon: Receipt },
   { to: "/scheduled-expenses", label: "Scheduled Expenses", icon: CalendarClock },
   { to: "/balance-sheet", label: "Assets & Liabilities", icon: Landmark },
   { to: "/payroll", label: "Payroll", icon: Users },

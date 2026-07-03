@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, FileText, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, FileText, Plus, Search } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { ChatbotWidget } from "@/components/dashboard/ChatbotWidget";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { RecordPaymentDialog } from "@/components/payments/RecordPaymentDialog";
 import { supabase, Transaction } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
 import { downloadCsv, printTableAsPdf } from "@/lib/exporters";
@@ -60,25 +61,27 @@ const Payments = () => {
   const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [customFrom, setCustomFrom] = useState(firstOfMonth());
   const [customTo, setCustomTo] = useState(todayStr());
+  const [recordOpen, setRecordOpen] = useState(false);
+
+  const loadTxns = async () => {
+    if (!profile?.business_id) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("business_id", profile.business_id)
+      .order("txn_date", { ascending: false })
+      .limit(2000);
+    if (error) {
+      toast({ title: "Couldn't load payments", description: error.message, variant: "destructive" });
+    } else {
+      setAllTxns((data ?? []) as Transaction[]);
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
-    if (!profile?.business_id) return;
-    const load = async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("transactions")
-        .select("*")
-        .eq("business_id", profile.business_id)
-        .order("txn_date", { ascending: false })
-        .limit(2000);
-      if (error) {
-        toast({ title: "Couldn't load payments", description: error.message, variant: "destructive" });
-      } else {
-        setAllTxns((data ?? []) as Transaction[]);
-      }
-      setLoading(false);
-    };
-    load();
+    loadTxns();
   }, [profile?.business_id]);
 
   const periodLabel = viewMode === "month"
@@ -142,11 +145,14 @@ const Payments = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => setRecordOpen(true)}
+              className="gap-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90">
+              <Plus className="h-4 w-4" /> Record Payment
+            </Button>
             <Button variant="outline" size="sm" onClick={onCsv} className="gap-2 rounded-lg">
               <Download className="h-4 w-4" /> CSV
             </Button>
-            <Button size="sm" onClick={onPdf}
-              className="gap-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90">
+            <Button variant="outline" size="sm" onClick={onPdf} className="gap-2 rounded-lg">
               <FileText className="h-4 w-4" /> PDF
             </Button>
           </div>
@@ -358,6 +364,15 @@ const Payments = () => {
           </Table>
         </div>
       </div>
+
+      {profile?.business_id && (
+        <RecordPaymentDialog
+          open={recordOpen}
+          onOpenChange={setRecordOpen}
+          businessId={profile.business_id}
+          onRecorded={loadTxns}
+        />
+      )}
 
       <ChatbotWidget />
     </AppShell>
