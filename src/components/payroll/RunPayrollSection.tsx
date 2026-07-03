@@ -255,7 +255,15 @@ export const RunPayrollSection = () => {
 
     if (error) {
       await supabase.from("payroll_runs").update({ status: "failed" }).eq("id", runData.id);
-      toast({ title: "Payroll run failed", description: error.message, variant: "destructive" });
+      if (error.code === "23505") {
+        toast({
+          title: "Payroll has already been run for this period",
+          description: `One or more selected employees already have a payslip for ${periodStart} → ${periodEnd}. Check the pending runs above.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Payroll run failed", description: error.message, variant: "destructive" });
+      }
     } else {
       toast({
         title: "Payroll generated ✅",
