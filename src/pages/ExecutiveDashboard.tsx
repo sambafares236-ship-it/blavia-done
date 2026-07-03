@@ -40,6 +40,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { supabase, Transaction } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 const BRAND = {
   emerald: "#0F6E56",
@@ -122,6 +123,7 @@ const tooltipStyle = {
 type RangeKey = "month" | "30d" | "quarter" | "year" | "custom";
 
 const ExecutiveDashboard = () => {
+  const { profile } = useAuth();
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -141,10 +143,12 @@ const ExecutiveDashboard = () => {
   });
 
   const load = async () => {
+    if (!profile?.business_id) return;
     setRefreshing(true);
     const { data, error } = await supabase
       .from("transactions")
       .select("*")
+      .eq("business_id", profile.business_id)
       .order("txn_date", { ascending: false })
       .limit(2000);
     if (error) {
@@ -158,7 +162,7 @@ const ExecutiveDashboard = () => {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [profile?.business_id]);
 
   // Available filter values
   const allCategories = useMemo(() => {
