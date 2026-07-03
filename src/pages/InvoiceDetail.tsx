@@ -10,7 +10,7 @@ import { toast } from "@/components/ui/use-toast";
 import {
   ArrowLeft, Send, CheckCircle, Trash2,
   AlertCircle, FileText, Building2, User,
-  Calendar, CreditCard, Smartphone, Loader2, Mail, Copy,
+  Calendar, CreditCard, Smartphone, Loader2, Mail, Copy, Shield,
 } from "lucide-react";
 
 interface Invoice {
@@ -60,54 +60,73 @@ const statusConfig: Record<string, { label: string; color: string; icon: any }> 
   overdue: { label: "Overdue", color: "bg-red-100 text-red-700", icon: AlertCircle },
 };
 
+const todayStr = () => new Date().toISOString().split("T")[0];
+
 const InvoiceDetail = () => {
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, business: authBusiness } = useAuth();
   const navigate = useNavigate();
-
+  const vatRegistered = authBusiness?.vat_registered ?? false;
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [business, setBusiness] = useState<Business | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [etimsSubmitting, setEtimsSubmitting] = useState(false);
 
-  // Resend panel state
-  const [resendPhone, setResendPhone] = useState("");
-  const [resendEmail, setResendEmail] = useState("");
-  const [resending, setResending] = useState(false);
+  const [hasMpesa, setHasMpesa] = useState(false);
+
+  const [payAmount, setPayAmount] = useState("");
+  const [payPhone, setPayPhone] = useState("");
+  const [payEmail, setPayEmail] = useState("");
+  const [payDueDate, setPayDueDate] = useState(todayStr());
+  const [payDescription, setPayDescription] = useState("Payment for goods/services");
+
+  const [sending, setSending] = useState(false);
   const [stkSent, setStkSent] = useState(false);
   const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
+  const [emailSentForInvoice, setEmailSentForInvoice] = useState(false);
 
   useEffect(() => {
     if (id && user) {
       fetchInvoice();
       fetchBusiness();
+      checkMpesaConfig();
     }
   }, [id, user]);
 
-  // Pre-fill resend fields from invoice
   useEffect(() => {
     if (!invoice) return;
-    if (invoice.customer_phone) setResendPhone(invoice.customer_phone);
-    else if (invoice.contacts?.phone) {
-      let p = invoice.contacts.phone.replace(/\s/g, "");
-      if (p.startsWith("0")) p = "254" + p.slice(1);
-      if (p.startsWith("+")) p = p.slice(1);
-      setResendPhone(p);
+    setPayAmount(String(invoice.total));
+    setPayDescription(invoice.payment_description || "Payment for goods/services");
+    setPayDueDate(invoice.due_date || todayStr());
+
+    if (invoice.customer_phone) {
+      setPayPhone(invoice.customer_phone);
+    } else if (invoice.contacts?.phone) {
+      let phone = invoice.contacts.phone.replace(/\s/g, "");
+      if (phone.startsWith("0")) phone = "254" + phone.slice(1);
+      if (phone.startsWith("+")) phone = phone.slice(1);
+      setPayPhone(phone);
     }
-    if (invoice.customer_email) setResendEmail(invoice.customer_email);
-    else if (invoice.contacts?.email) setResendEmail(invoice.contacts.email);
+
+    if (invoice.customer_email) {
+      setPayEmail(invoice.customer_email);
+    } else if (invoice.contacts?.email) {
+      setPayEmail(invoice.contacts.email);
+    }
   }, [invoice]);
 
-  // Poll for STK payment confirmation
   useEffect(() => {
     if (!stkSent || !checkoutRequestId) return;
+
     const interval = setInterval(async () => {
       const { data } = await supabase
         .from("mpesa_transactions")
         .select("status, mpesa_receipt_number")
         .eq("checkout_request_id", checkoutRequestId)
         .single();
+
       if (data?.status === "success") {
         clearInterval(interval);
         setStkSent(false);
@@ -119,9 +138,35 @@ const InvoiceDetail = () => {
         toast({ title: "Payment failed or cancelled", variant: "destructive" });
       }
     }, 5000);
-    const timeout = setTimeout(() => { clearInterval(interval); setStkSent(false); }, 120000);
-    return () => { clearInterval(interval); clearTimeout(timeout); };
+
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+      setStkSent(false);
+    }, 120000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
   }, [stkSent, checkoutRequestId]);
+
+  const checkMpesaConfig = async () => {
+    if (!user) return;
+    const { data: biz } = await supabase
+      .from("businesses")
+      .select("id")
+      .eq("owner_id", user.id)
+      .limit(1)
+      .single();
+    if (!biz) return;
+    const { data: config } = await supabase
+      .from("mpesa_configs")
+      .select("id")
+      .eq("business_id", biz.id)
+      .eq("is_active", true)
+      .single();
+    setHasMpesa(!!config);
+  };
 
   const fetchBusiness = async () => {
     const { data } = await supabase
@@ -146,6 +191,16 @@ const InvoiceDetail = () => {
       return;
     }
     setInvoice(inv);
+
+    // Reflect whether an email is already queued/sent for this invoice
+    const { data: existingQueue } = await supabase
+      .from("invoice_queue")
+      .select("id")
+      .eq("invoice_id", id)
+      .in("status", ["pending", "done"])
+      .limit(1);
+    setEmailSentForInvoice((existingQueue?.length || 0) > 0);
+
     const { data: invItems } = await supabase
       .from("invoice_items")
       .select("*")
@@ -155,36 +210,51 @@ const InvoiceDetail = () => {
     setLoading(false);
   };
 
-  const normalizePhone = (phone: string) => {
-    let p = phone.replace(/\s/g, "");
-    if (p.startsWith("0")) p = "254" + p.slice(1);
-    if (p.startsWith("+")) p = p.slice(1);
-    return p;
+  const isDueToday = payDueDate <= todayStr();
+  const hasPhone = !!payPhone.trim();
+  const hasEmail = !!payEmail.trim();
+
+  const getActionLabel = () => {
+    if (hasPhone && hasEmail && isDueToday) return "Send STK Push + Email";
+    if (hasPhone && hasEmail && !isDueToday) return "Send Email + Schedule STK";
+    if (hasPhone && !hasEmail && isDueToday) return "Send STK Push Now";
+    if (hasPhone && !hasEmail && !isDueToday) return "Schedule STK Push";
+    if (!hasPhone && hasEmail) return "Send Invoice Email";
+    return "Enter a phone or email";
   };
 
-  // ── Resend handler ────────────────────────────────────────────
-  const handleResend = async () => {
-    if (!invoice) return;
-    const hasPhone = resendPhone.trim().length > 0;
-    const hasEmail = resendEmail.trim().length > 0;
+  const canSend = hasPhone || hasEmail;
 
-    if (!hasPhone && !hasEmail) {
-      toast({ title: "Enter a phone number or email", variant: "destructive" });
+  const handleSmartSend = async () => {
+    if (!invoice || !canSend) {
+      toast({ title: "Enter a phone number or email first", variant: "destructive" });
       return;
     }
 
-    setResending(true);
+    setSending(true);
 
-    // Update invoice with latest contact info
-    await supabase.from("invoices").update({
-      customer_phone: hasPhone ? normalizePhone(resendPhone) : null,
-      customer_email: hasEmail ? resendEmail.trim() : null,
-      status: invoice.status === "draft" ? "sent" : invoice.status,
-      sent_at: invoice.sent_at || new Date().toISOString(),
-    }).eq("id", invoice.id);
+    const { error: updateError } = await supabase
+      .from("invoices")
+      .update({
+        customer_phone: hasPhone ? payPhone.trim() : null,
+        customer_email: hasEmail ? payEmail.trim() : null,
+        payment_description: payDescription.trim() || "Payment for goods/services",
+        due_date: payDueDate,
+        total: Number(payAmount) || invoice.total,
+        status: invoice.status === "draft" ? "sent" : invoice.status,
+        sent_at: invoice.sent_at || new Date().toISOString(),
+      })
+      .eq("id", invoice.id);
 
-    // Queue email
-    if (hasEmail) {
+    if (updateError) {
+      toast({ title: "Error saving payment details", description: updateError.message, variant: "destructive" });
+      setSending(false);
+      return;
+    }
+
+    // Queue the email only if not already queued/sent — guarded twice:
+    // here on the frontend, and at the database via a unique index.
+    if (hasEmail && !emailSentForInvoice) {
       const { error: queueError } = await supabase.from("invoice_queue").insert({
         invoice_id: invoice.id,
         business_id: invoice.business_id,
@@ -192,39 +262,87 @@ const InvoiceDetail = () => {
         action: "send_email",
         status: "pending",
       });
+
       if (queueError) {
         if (queueError.code === "23505") {
-          toast({ title: "Email already queued for this invoice" });
+          toast({
+            title: "Email already queued",
+            description: "This invoice already has a pending or sent email — no need to send again.",
+          });
+          setEmailSentForInvoice(true);
         } else {
-          toast({ title: "Failed to queue email", description: queueError.message, variant: "destructive" });
+          toast({ title: "Error queuing email", description: queueError.message, variant: "destructive" });
         }
       } else {
-        toast({ title: "Email queued", description: "Will be sent within 2 minutes" });
+        setEmailSentForInvoice(true);
+        toast({ title: "Invoice queued for email" });
       }
+    } else if (hasEmail && emailSentForInvoice) {
+      toast({ title: "Email already sent", description: "This invoice's email has already been queued previously." });
     }
 
-    // Fire STK Push
-    if (hasPhone) {
+    if (hasPhone && isDueToday) {
+      let phone = payPhone.replace(/\s/g, "");
+      if (phone.startsWith("0")) phone = "254" + phone.slice(1);
+      if (phone.startsWith("+")) phone = phone.slice(1);
+
       const { data, error } = await supabase.functions.invoke("mpesa-stk-push", {
         body: {
           invoice_id: invoice.id,
-          phone_number: normalizePhone(resendPhone),
-          amount: invoice.total,
+          phone_number: phone,
+          amount: Number(payAmount) || invoice.total,
           account_reference: invoice.invoice_number,
-          transaction_desc: invoice.payment_description || "Payment for goods/services",
+          transaction_desc: payDescription,
         },
       });
+
       if (error || !data?.success) {
-        toast({ title: "STK Push failed", description: data?.error || "Could not send", variant: "destructive" });
+        toast({
+          title: "STK Push failed",
+          description: data?.error || "Could not send payment request",
+          variant: "destructive",
+        });
       } else {
         setCheckoutRequestId(data.checkout_request_id);
         setStkSent(true);
-        toast({ title: "STK Push sent!", description: `Check ${resendPhone} for the M-Pesa prompt` });
+        toast({ title: "STK Push sent!", description: `Check ${payPhone} for the M-Pesa prompt` });
       }
+    } else if (hasPhone && !isDueToday) {
+      toast({ title: "STK Push scheduled", description: `Will be sent automatically on ${formatDate(payDueDate)}` });
     }
 
     fetchInvoice();
-    setResending(false);
+    setSending(false);
+  };
+
+
+  const handleSubmitEtims = async () => {
+    if (!invoice) return;
+    setEtimsSubmitting(true);
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/etims-send-invoice`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({ invoice_id: invoice.id }),
+        }
+      );
+      const result = await res.json();
+      if (!res.ok || result.error) {
+        toast({ title: "eTIMS submission failed", description: result.error || "KRA returned an error", variant: "destructive" });
+      } else {
+        toast({ title: "Invoice submitted to KRA eTIMS ✓", description: `CUIN: ${result.cuin}` });
+        fetchInvoice();
+      }
+    } catch (err: any) {
+      toast({ title: "Network error", description: err.message, variant: "destructive" });
+    } finally {
+      setEtimsSubmitting(false);
+    }
   };
 
   const handleMarkPaid = async () => {
@@ -233,7 +351,7 @@ const InvoiceDetail = () => {
       .from("invoices")
       .update({ status: "paid", paid_at: new Date().toISOString() })
       .eq("id", id);
-    if (error) toast({ title: "Error updating invoice", variant: "destructive" });
+    if (error) { toast({ title: "Error updating invoice", variant: "destructive" }); }
     else { toast({ title: "Invoice marked as paid!" }); fetchInvoice(); }
     setUpdating(false);
   };
@@ -242,13 +360,14 @@ const InvoiceDetail = () => {
     if (!confirm("Are you sure you want to delete this invoice?")) return;
     setUpdating(true);
     const { error } = await supabase.from("invoices").delete().eq("id", id);
-    if (error) toast({ title: "Error deleting invoice", variant: "destructive" });
+    if (error) { toast({ title: "Error deleting invoice", variant: "destructive" }); }
     else { toast({ title: "Invoice deleted" }); navigate("/invoices"); }
     setUpdating(false);
   };
 
   const copyPaymentLink = () => {
-    navigator.clipboard.writeText(`${window.location.origin}/pay/${invoice?.id}`);
+    const link = `${window.location.origin}/pay/${invoice?.id}`;
+    navigator.clipboard.writeText(link);
     toast({ title: "Payment link copied!" });
   };
 
@@ -256,7 +375,9 @@ const InvoiceDetail = () => {
     `KES ${(amount || 0).toLocaleString("en-KE", { minimumFractionDigits: 2 })}`;
 
   const formatDate = (date: string) =>
-    date ? new Date(date).toLocaleDateString("en-KE", { day: "numeric", month: "long", year: "numeric" }) : "—";
+    date ? new Date(date).toLocaleDateString("en-KE", {
+      day: "numeric", month: "long", year: "numeric"
+    }) : "—";
 
   if (loading) {
     return (
@@ -272,12 +393,12 @@ const InvoiceDetail = () => {
 
   const status = statusConfig[invoice.status] || statusConfig.draft;
   const StatusIcon = status.icon;
+  const showPaymentPanel = invoice.status !== "paid";
 
   return (
     <AppShell>
       <div className="space-y-6 max-w-4xl mx-auto">
 
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="sm" onClick={() => navigate("/invoices")} className="gap-2">
@@ -296,16 +417,7 @@ const InvoiceDetail = () => {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={copyPaymentLink}
-              className="gap-2"
-            >
-              <Copy className="h-4 w-4" />
-              Copy payment link
-            </Button>
-            {(invoice.status === "sent" || invoice.status === "overdue") && (
+            {invoice.status === "sent" && (
               <Button onClick={handleMarkPaid} disabled={updating} className="gap-2 bg-green-600 hover:bg-green-700">
                 <CheckCircle className="h-4 w-4" />
                 Mark as Paid
@@ -320,61 +432,123 @@ const InvoiceDetail = () => {
           </div>
         </div>
 
-        {/* Resend Panel — only when not paid */}
-        {invoice.status !== "paid" && (
-          <div className="rounded-xl border-2 border-green-200 bg-green-50 p-5 space-y-3">
+        {showPaymentPanel && (
+          <div className="rounded-xl border-2 border-green-200 bg-green-50 p-5 space-y-4">
             <div className="flex items-center gap-2">
               <Smartphone className="h-5 w-5 text-green-600" />
-              <h3 className="font-semibold text-green-800">
-                {invoice.status === "draft" ? "Send Invoice" : "Resend"}
-              </h3>
+              <h3 className="font-semibold text-green-800">Request Payment</h3>
+              {invoice.id && (
+                <button
+                  onClick={copyPaymentLink}
+                  className="ml-auto flex items-center gap-1 text-xs text-green-700 hover:underline"
+                >
+                  <Copy className="h-3 w-3" />Copy payment link
+                </button>
+              )}
             </div>
 
             {!stkSent ? (
-              <div className="flex flex-col md:flex-row gap-3 items-end">
-                <div className="flex-1 space-y-1.5">
-                  <Label className="text-green-800 text-xs flex items-center gap-1">
-                    <Smartphone className="h-3 w-3" /> Phone
-                  </Label>
-                  <Input
-                    value={resendPhone}
-                    onChange={(e) => setResendPhone(e.target.value)}
-                    placeholder="254700000000"
-                    className="bg-white border-green-300"
-                  />
+              <>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-green-800 text-xs">Amount (KES)</Label>
+                    <Input
+                      type="number"
+                      value={payAmount}
+                      onChange={(e) => setPayAmount(e.target.value)}
+                      className="bg-white border-green-300"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-green-800 text-xs">Due Date</Label>
+                    <Input
+                      type="date"
+                      value={payDueDate}
+                      onChange={(e) => setPayDueDate(e.target.value)}
+                      className="bg-white border-green-300"
+                    />
+                    <p className="text-[11px] text-green-600">
+                      {isDueToday ? "Today — STK Push fires immediately" : "Future date — STK Push will be scheduled"}
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-green-800 text-xs flex items-center gap-1">
+                      <Smartphone className="h-3 w-3" />Phone number <span className="text-green-500">(optional)</span>
+                    </Label>
+                    <Input
+                      value={payPhone}
+                      onChange={(e) => setPayPhone(e.target.value)}
+                      placeholder="254700000000"
+                      className="bg-white border-green-300"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-green-800 text-xs flex items-center gap-1">
+                      <Mail className="h-3 w-3" />Email <span className="text-green-500">(optional)</span>
+                    </Label>
+                    <Input
+                      type="email"
+                      value={payEmail}
+                      onChange={(e) => setPayEmail(e.target.value)}
+                      placeholder="customer@email.com"
+                      className="bg-white border-green-300"
+                    />
+                  </div>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <Label className="text-green-800 text-xs">Description</Label>
+                    <Input
+                      value={payDescription}
+                      onChange={(e) => setPayDescription(e.target.value)}
+                      className="bg-white border-green-300"
+                    />
+                  </div>
                 </div>
-                <div className="flex-1 space-y-1.5">
-                  <Label className="text-green-800 text-xs flex items-center gap-1">
-                    <Mail className="h-3 w-3" /> Email
-                  </Label>
-                  <Input
-                    type="email"
-                    value={resendEmail}
-                    onChange={(e) => setResendEmail(e.target.value)}
-                    placeholder="client@example.com"
-                    className="bg-white border-green-300"
-                  />
-                </div>
+
+                {!hasMpesa && hasPhone && isDueToday && (
+                  <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    M-Pesa isn't configured yet —{" "}
+                    <button onClick={() => navigate("/mpesa-settings")} className="underline font-medium">set it up</button>
+                    {" "}to enable instant STK Push.
+                  </div>
+                )}
+
+                {hasEmail && emailSentForInvoice && (
+                  <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                    <CheckCircle className="h-3.5 w-3.5 shrink-0" />
+                    An email has already been queued or sent for this invoice.
+                  </div>
+                )}
+
                 <Button
-                  onClick={handleResend}
-                  disabled={resending}
-                  className="bg-green-600 hover:bg-green-700 text-white gap-2 shrink-0"
+                  onClick={handleSmartSend}
+                  disabled={sending || !canSend}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white gap-2"
                 >
-                  {resending ? (
+                  {sending ? (
                     <><Loader2 className="h-4 w-4 animate-spin" />Sending...</>
                   ) : (
-                    <><Send className="h-4 w-4" />Send</>
+                    <><Send className="h-4 w-4" />{getActionLabel()}</>
                   )}
                 </Button>
-              </div>
+              </>
             ) : (
               <div className="flex items-center gap-3 bg-white rounded-lg border border-green-200 p-4">
                 <Loader2 className="h-5 w-5 animate-spin text-green-600" />
                 <div>
-                  <p className="text-sm font-medium text-green-800">Waiting for M-Pesa payment from {resendPhone}...</p>
-                  <p className="text-xs text-green-600">Page updates automatically when paid.</p>
+                  <p className="text-sm font-medium text-green-800">
+                    Waiting for payment from {payPhone}...
+                  </p>
+                  <p className="text-xs text-green-600">
+                    Customer should see an M-Pesa prompt. Page updates automatically when paid.
+                  </p>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setStkSent(false)} className="ml-auto shrink-0 border-green-300 text-green-700">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setStkSent(false)}
+                  className="ml-auto shrink-0 border-green-300 text-green-700"
+                >
                   Cancel
                 </Button>
               </div>
@@ -382,10 +556,8 @@ const InvoiceDetail = () => {
           </div>
         )}
 
-        {/* Invoice Card */}
         <div className="rounded-xl border bg-card overflow-hidden">
 
-          {/* From / Bill To */}
           <div className="bg-sidebar p-6 grid grid-cols-2 gap-6">
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -400,16 +572,15 @@ const InvoiceDetail = () => {
                 <User className="h-4 w-4 text-white/60" />
                 <span className="text-xs text-white/60 uppercase font-medium">Bill To</span>
               </div>
-              <p className="text-white font-bold text-lg">{invoice.contacts?.name || "—"}</p>
-              <p className="text-white/70 text-sm">{invoice.customer_email || invoice.contacts?.email || ""}</p>
-              <p className="text-white/70 text-sm">{invoice.customer_phone || invoice.contacts?.phone || ""}</p>
+              <p className="text-white font-bold text-lg">{invoice.contacts?.name}</p>
+              <p className="text-white/70 text-sm">{invoice.customer_email || invoice.contacts?.email}</p>
+              <p className="text-white/70 text-sm">{invoice.customer_phone || invoice.contacts?.phone}</p>
               {invoice.contacts?.kra_pin && (
                 <p className="text-white/70 text-sm">KRA PIN: {invoice.contacts.kra_pin}</p>
               )}
             </div>
           </div>
 
-          {/* Meta row */}
           <div className="grid grid-cols-3 gap-4 p-6 border-b bg-muted/30">
             <div className="flex items-center gap-3">
               <FileText className="h-4 w-4 text-muted-foreground" />
@@ -434,7 +605,6 @@ const InvoiceDetail = () => {
             </div>
           </div>
 
-          {/* Line items table */}
           <div className="p-6">
             <table className="w-full">
               <thead>
@@ -460,14 +630,18 @@ const InvoiceDetail = () => {
             </table>
 
             <div className="mt-4 space-y-2 ml-auto max-w-xs">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal (excl. VAT)</span>
-                <span>{formatCurrency(invoice.subtotal)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">VAT</span>
-                <span>{formatCurrency(invoice.vat_amount)}</span>
-              </div>
+              {vatRegistered && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal (excl. VAT)</span>
+                    <span>{formatCurrency(invoice.subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">VAT (16%)</span>
+                    <span>{formatCurrency(invoice.vat_amount)}</span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between font-bold text-lg border-t pt-2">
                 <span>Total</span>
                 <span className="text-primary">{formatCurrency(invoice.total)}</span>
@@ -475,7 +649,6 @@ const InvoiceDetail = () => {
             </div>
           </div>
 
-          {/* Notes */}
           {invoice.notes && (
             <div className="px-6 pb-6">
               <p className="text-xs text-muted-foreground uppercase font-medium mb-1">Notes</p>
@@ -483,15 +656,29 @@ const InvoiceDetail = () => {
             </div>
           )}
 
-          {/* Footer */}
           <div className="bg-muted/30 px-6 py-4 flex items-center justify-between border-t">
             <div>
               {invoice.cuin ? (
-                <p className="text-xs text-muted-foreground">
-                  KRA eTIMS CUIN: <span className="font-medium">{invoice.cuin}</span>
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    KRA eTIMS CUIN: <span className="font-medium text-green-600">{invoice.cuin}</span>
+                  </p>
+                </div>
+              ) : vatRegistered ? (
+                <button
+                  onClick={handleSubmitEtims}
+                  disabled={etimsSubmitting}
+                  className="flex items-center gap-1.5 text-xs text-primary hover:underline disabled:opacity-50"
+                >
+                  {etimsSubmitting ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Shield className="h-3 w-3" />
+                  )}
+                  {etimsSubmitting ? "Submitting to KRA..." : "Submit to eTIMS"}
+                </button>
               ) : (
-                <p className="text-xs text-muted-foreground">eTIMS: Not yet submitted</p>
+                <p className="text-xs text-muted-foreground">eTIMS: Not applicable</p>
               )}
               {invoice.mpesa_reference && (
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -505,7 +692,6 @@ const InvoiceDetail = () => {
           </div>
         </div>
 
-        {/* Timeline */}
         <div className="rounded-xl border bg-card p-6">
           <h3 className="font-semibold mb-4">Timeline</h3>
           <div className="space-y-3">
@@ -530,7 +716,6 @@ const InvoiceDetail = () => {
             )}
           </div>
         </div>
-
       </div>
     </AppShell>
   );

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarRange, Loader2, PlayCircle, Smartphone, ShieldCheck } from "lucide-react";
+import { CalendarRange, Loader2, PlayCircle, Smartphone, ShieldCheck, CheckCircle, AlertCircle, X, Users, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -44,6 +44,22 @@ interface PreviewRow {
   net: number;
 }
 
+interface PendingRun {
+  id: string;
+  run_period: string;
+  total_gross: number;
+  total_net: number;
+  total_deductions: number;
+  notes: string;
+  created_at: string;
+  payslips: {
+    id: string;
+    net_pay: number;
+    payment_status: string;
+    employees: { full_name: string; mpesa_number: string; phone: string } | null;
+  }[];
+}
+
 const today = () => new Date().toISOString().slice(0, 10);
 const firstOfMonth = () => {
   const d = new Date();
@@ -55,7 +71,7 @@ const lastOfMonth = () => {
 };
 
 export const RunPayrollSection = () => {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -69,18 +85,24 @@ export const RunPayrollSection = () => {
   const [mpesaB2C, setMpesaB2C] = useState(true);
   const [etims, setEtims] = useState(false);
 
+  // Pending runs
+  const [pendingRuns, setPendingRuns] = useState<PendingRun[]>([]);
+  const [loadingPending, setLoadingPending] = useState(false);
+
+  // Approval modal
+  const [approvalRun, setApprovalRun] = useState<PendingRun | null>(null);
+  const [approving, setApproving] = useState(false);
+
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-
-      // ── Get business_id for this user ──────────────
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setLoading(false); return; }
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (!u) { setLoading(false); return; }
 
       const { data: bizData } = await supabase
         .from("businesses")
         .select("id")
-        .eq("owner_id", user.id)
+        .eq("owner_id", u.id)
         .limit(1)
         .single();
 
@@ -92,7 +114,6 @@ export const RunPayrollSection = () => {
 
       setBusinessId(bizData.id);
 
-      // ── Fetch only THIS business's employees ───────
       const { data, error } = await supabase
         .from("employees")
         .select("*")
@@ -101,11 +122,7 @@ export const RunPayrollSection = () => {
         .order("full_name");
 
       if (error) {
-        toast({
-          title: "Couldn't load employees",
-          description: error.message,
-          variant: "destructive",
-        });
+        toast({ title: "Couldn't load employees", description: error.message, variant: "destructive" });
       } else {
         const list = (data ?? []) as Employee[];
         setEmployees(list);
@@ -114,9 +131,25 @@ export const RunPayrollSection = () => {
         setSelected(initSel);
       }
       setLoading(false);
+      fetchPendingRuns(bizData.id);
     };
     load();
   }, []);
+
+  const fetchPendingRuns = async (bizId: string) => {
+    setLoadingPending(true);
+    const { data, error } = await supabase
+      .from("payroll_runs")
+      .select(`*, payslips(id, net_pay, payment_status, employees(full_name, mpesa_number, phone))`)
+      .eq("business_id", bizId)
+      .eq("status", "draft")
+      .order("created_at", { ascending: false });
+    if (error) {
+      toast({ title: "Couldn't load pending payroll runs", description: error.message, variant: "destructive" });
+    }
+    setPendingRuns((data as PendingRun[]) || []);
+    setLoadingPending(false);
+  };
 
   const preview: PreviewRow[] = useMemo(() => {
     return employees.map((e) => {
@@ -124,9 +157,7 @@ export const RunPayrollSection = () => {
       const days = daysWorked[e.id] ?? STANDARD_DAYS;
       const basic = (fullBase * days) / STANDARD_DAYS;
       const comm = commission[e.id] ?? 0;
-      const allowanceTotal = Object.values(e.allowances ?? {}).reduce(
-        (s, v) => s + (Number(v) || 0), 0,
-      );
+      const allowanceTotal = Object.values(e.allowances ?? {}).reduce((s, v) => s + (Number(v) || 0), 0);
       const gross = basic + comm + allowanceTotal;
       const nssf = Math.min(gross * NSSF_RATE, NSSF_CAP);
       const housing = gross * HOUSING_LEVY;
@@ -141,21 +172,8 @@ export const RunPayrollSection = () => {
         .reduce((s, [, v]) => s + (Number(v) || 0), 0);
       const net = gross - paye - housing - shif - nssf - cotu - welfare - otherDeductions;
       return {
-        employee: e,
-        selected: !!selected[e.id],
-        daysWorked: days,
-        commission: comm,
-        basic,
-        gross,
-        nssf,
-        housing,
-        shif,
-        cotu,
-        welfare,
-        taxable,
-        taxBeforeRelief,
-        paye,
-        net,
+        employee: e, selected: !!selected[e.id], daysWorked: days, commission: comm,
+        basic, gross, nssf, housing, shif, cotu, welfare, taxable, taxBeforeRelief, paye, net,
       };
     });
   }, [employees, selected, daysWorked, commission]);
@@ -189,7 +207,6 @@ export const RunPayrollSection = () => {
 
     setRunning(true);
 
-    // ── Insert payroll run first ───────────────────
     const { data: runData, error: runError } = await supabase
       .from("payroll_runs")
       .insert({
@@ -200,7 +217,7 @@ export const RunPayrollSection = () => {
         total_deductions: Math.round(selectedRows.reduce((s, r) => s + r.paye + r.nssf + r.housing + r.shif + r.cotu + r.welfare, 0)),
         total_net: Math.round(selectedRows.reduce((s, r) => s + r.net, 0)),
         total_employer_contributions: Math.round(selectedRows.reduce((s, r) => s + r.nssf, 0)),
-        status: "processing",
+        status: "draft",
         notes: `Payroll run for ${periodStart} → ${periodEnd}`,
       })
       .select()
@@ -212,7 +229,6 @@ export const RunPayrollSection = () => {
       return;
     }
 
-    // ── Insert payslips with business_id ──────────
     const records = selectedRows.map((r) => ({
       payroll_run_id: runData.id,
       employee_id: r.employee.id,
@@ -226,10 +242,7 @@ export const RunPayrollSection = () => {
       nssf_employee: Math.round(r.nssf),
       nhif_employee: Math.round(r.shif),
       housing_levy: Math.round(r.housing),
-      other_deductions: {
-        cotu: Math.round(r.cotu),
-        welfare: Math.round(r.welfare),
-      },
+      other_deductions: { cotu: Math.round(r.cotu), welfare: Math.round(r.welfare) },
       total_deductions: Math.round(r.paye + r.nssf + r.housing + r.shif + r.cotu + r.welfare),
       net_pay: Math.round(r.net),
       nssf_employer: Math.round(r.nssf),
@@ -240,33 +253,89 @@ export const RunPayrollSection = () => {
 
     const { error } = await supabase.from("payslips").insert(records);
 
-    // ── Mark the run completed or failed based on the result ──
-    await supabase
-      .from("payroll_runs")
-      .update({ status: error ? "failed" : "completed" })
-      .eq("id", runData.id);
-
-    setRunning(false);
-
     if (error) {
-      toast({
-        title: "Payroll run failed",
-        description: error.message,
-        variant: "destructive",
-      });
+      await supabase.from("payroll_runs").update({ status: "failed" }).eq("id", runData.id);
+      toast({ title: "Payroll run failed", description: error.message, variant: "destructive" });
     } else {
       toast({
         title: "Payroll generated ✅",
-        description: `${records.length} payslip${records.length === 1 ? "" : "s"} for ${periodStart} → ${periodEnd}${mpesaB2C ? " · M-Pesa B2C queued" : ""}${etims ? " · eTIMS sync queued" : ""}`,
+        description: `${records.length} payslip(s) created. Review and approve payment below.`,
       });
+      fetchPendingRuns(businessId);
+    }
+    setRunning(false);
+  };
+
+  // ── Approve & Pay ────────────────────────────────────────────────────────────
+  const handleApproveAndPay = async () => {
+    if (!approvalRun || !businessId) return;
+    setApproving(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("mpesa-b2c", {
+        body: {
+          payroll_run_id: approvalRun.id,
+          business_id: businessId,
+          approved_by: user?.email ?? "owner",
+        },
+      });
+
+      if (error || !data?.success) {
+        toast({
+          title: "Payment failed",
+          description: data?.error || "Could not initiate M-Pesa B2C payments",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: `Payments initiated! ✅`,
+          description: `${data.success_count} of ${data.total} employees paid. ${data.fail_count > 0 ? data.fail_count + " failed — retry from pending runs." : ""}`,
+        });
+        setApprovalRun(null);
+        fetchPendingRuns(businessId);
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setApproving(false);
     }
   };
 
-  const allSelected =
-    employees.length > 0 && employees.every((e) => selected[e.id]);
+  const allSelected = employees.length > 0 && employees.every((e) => selected[e.id]);
 
   return (
     <div className="space-y-6">
+
+      {/* ── Pending Runs ─────────────────────────────────────────────────────── */}
+      {pendingRuns.length > 0 && (
+        <Card className="border-2 border-amber-200 bg-amber-50 p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <AlertCircle className="h-5 w-5 text-amber-600" />
+            <h3 className="font-semibold text-amber-800">Pending Payroll Approval</h3>
+          </div>
+          <div className="space-y-3">
+            {pendingRuns.map((run) => (
+              <div key={run.id} className="rounded-lg bg-white border border-amber-200 p-4 flex items-center justify-between gap-4">
+                <div>
+                  <p className="font-medium text-sm">{run.run_period} Payroll</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {run.payslips?.length || 0} employees · Total Net: {fmtKES(run.total_net)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{run.notes}</p>
+                </div>
+                <Button
+                  onClick={() => setApprovalRun(run)}
+                  className="gap-2 bg-amber-600 hover:bg-amber-700 shrink-0"
+                  size="sm"
+                >
+                  <Smartphone className="h-4 w-4" />
+                  Review & Approve
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* Integrations */}
       <Card className="border border-border/60 p-5 shadow-card">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -442,10 +511,92 @@ export const RunPayrollSection = () => {
           {running ? (
             <><Loader2 className="h-4 w-4 animate-spin" />Running…</>
           ) : (
-            <><PlayCircle className="h-4 w-4" />Run payroll for {totals.count} employee{totals.count === 1 ? "" : "s"}</>
+            <><PlayCircle className="h-4 w-4" />Generate payroll for {totals.count} employee{totals.count === 1 ? "" : "s"}</>
           )}
         </Button>
       </div>
+
+      {/* ── Approval Modal ─────────────────────────────────────────────────────── */}
+      {approvalRun && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-xl border bg-card shadow-xl">
+
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b">
+              <div>
+                <h3 className="font-semibold text-lg">Approve Payroll Payment</h3>
+                <p className="text-sm text-muted-foreground mt-0.5">{approvalRun.run_period} · via M-Pesa B2C</p>
+              </div>
+              <button onClick={() => setApprovalRun(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Summary */}
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg bg-muted/40 p-3 text-center">
+                  <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground mb-1">
+                    <Users className="h-3.5 w-3.5" />Employees
+                  </div>
+                  <p className="text-xl font-bold">{approvalRun.payslips?.length || 0}</p>
+                </div>
+                <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-center">
+                  <div className="flex items-center justify-center gap-1.5 text-xs text-green-700 mb-1">
+                    <DollarSign className="h-3.5 w-3.5" />Total to Disburse
+                  </div>
+                  <p className="text-xl font-bold text-green-700">{fmtKES(approvalRun.total_net)}</p>
+                </div>
+              </div>
+
+              {/* Employee breakdown */}
+              <div className="rounded-lg border overflow-hidden">
+                <div className="bg-muted/40 px-4 py-2 text-xs font-medium text-muted-foreground uppercase">
+                  Payment breakdown
+                </div>
+                <div className="divide-y max-h-52 overflow-y-auto">
+                  {approvalRun.payslips?.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between px-4 py-2.5">
+                      <div>
+                        <p className="text-sm font-medium">{p.employees?.full_name || "Employee"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {p.employees?.mpesa_number || p.employees?.phone || "No M-Pesa number"}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-green-700">{fmtKES(p.net_pay)}</p>
+                        <p className="text-xs text-muted-foreground capitalize">{p.payment_status}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700">
+                <strong>Note:</strong> This will initiate M-Pesa B2C payments to all employees above. Employees without an M-Pesa number will be marked as failed and can be retried manually.
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 justify-end p-6 border-t">
+              <Button variant="outline" onClick={() => setApprovalRun(null)} disabled={approving}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleApproveAndPay}
+                disabled={approving}
+                className="gap-2 bg-green-600 hover:bg-green-700"
+              >
+                {approving ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Processing…</>
+                ) : (
+                  <><Smartphone className="h-4 w-4" />Confirm & Pay via M-Pesa</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
