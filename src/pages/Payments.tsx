@@ -37,6 +37,15 @@ const buildMonthOptions = () => {
   return options;
 };
 
+const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+const firstOfMonth = () => {
+  const d = new Date();
+  return isoDate(new Date(d.getFullYear(), d.getMonth(), 1));
+};
+const todayStr = () => isoDate(new Date());
+
+type ViewMode = "month" | "custom" | "all";
+
 const Payments = () => {
   const { profile } = useAuth();
   const [allTxns, setAllTxns] = useState<Transaction[]>([]);
@@ -44,9 +53,13 @@ const Payments = () => {
   const [search, setSearch] = useState("");
 
   const monthOptions = useMemo(() => buildMonthOptions(), []);
-  // Default to previous month (index 1) since current month is often empty
-  const [monthIdx, setMonthIdx] = useState(1);
+  // Default to the current month (index 0) so today's payments show immediately
+  const [monthIdx, setMonthIdx] = useState(0);
   const selectedMonth = monthOptions[monthIdx];
+
+  const [viewMode, setViewMode] = useState<ViewMode>("month");
+  const [customFrom, setCustomFrom] = useState(firstOfMonth());
+  const [customTo, setCustomTo] = useState(todayStr());
 
   useEffect(() => {
     if (!profile?.business_id) return;
@@ -68,16 +81,27 @@ const Payments = () => {
     load();
   }, [profile?.business_id]);
 
+  const periodLabel = viewMode === "month"
+    ? selectedMonth.label
+    : viewMode === "all"
+      ? "all time"
+      : `${customFrom || "…"} → ${customTo || "…"}`;
+
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return allTxns.filter((t) => {
-      if (!t.txn_date?.startsWith(selectedMonth.key)) return false;
+      if (viewMode === "month") {
+        if (!t.txn_date?.startsWith(selectedMonth.key)) return false;
+      } else if (viewMode === "custom") {
+        if (customFrom && (t.txn_date ?? "") < customFrom) return false;
+        if (customTo && (t.txn_date ?? "") > customTo) return false;
+      }
       if (!q) return true;
       return [t.narration, t.category, t.txn_id, t.ref_number, t.source_bank]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [allTxns, selectedMonth.key, search]);
+  }, [allTxns, viewMode, selectedMonth.key, customFrom, customTo, search]);
 
   const totals = useMemo(() => {
     const inflow = rows
@@ -96,10 +120,11 @@ const Payments = () => {
     t.source_bank ?? "", t.status ?? "",
   ]);
 
-  const onCsv = () => downloadCsv(`payments-${selectedMonth.key}.csv`, headers, exportRows());
+  const periodKey = viewMode === "month" ? selectedMonth.key : viewMode === "all" ? "all-time" : `${customFrom}_to_${customTo}`;
+  const onCsv = () => downloadCsv(`payments-${periodKey}.csv`, headers, exportRows());
   const onPdf = () => printTableAsPdf({
     title: "Payments",
-    subtitle: selectedMonth.label,
+    subtitle: periodLabel,
     headers, rows: exportRows(),
   });
 
@@ -113,7 +138,7 @@ const Payments = () => {
               Payments
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {loading ? "Loading…" : `${totals.count} transaction${totals.count !== 1 ? "s" : ""} in ${selectedMonth.label}`}
+              {loading ? "Loading…" : `${totals.count} transaction${totals.count !== 1 ? "s" : ""} ${viewMode === "all" ? "(all time)" : viewMode === "custom" ? `from ${periodLabel}` : `in ${periodLabel}`}`}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -150,46 +175,92 @@ const Payments = () => {
           </Card>
         </section>
 
-        {/* Month navigator + search */}
+        {/* View mode + period filter + search */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Month selector */}
-          <div className="flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1.5 shadow-card">
-            <button
-              onClick={() => setMonthIdx((i) => Math.min(i + 1, monthOptions.length - 1))}
-              disabled={monthIdx >= monthOptions.length - 1}
-              className="rounded p-1 hover:bg-muted disabled:opacity-30 transition-colors"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="min-w-[160px] text-center text-sm font-semibold">
-              {selectedMonth.label}
-            </span>
-            <button
-              onClick={() => setMonthIdx((i) => Math.max(i - 1, 0))}
-              disabled={monthIdx <= 0}
-              className="rounded p-1 hover:bg-muted disabled:opacity-30 transition-colors"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* Quick month jumps */}
-          <div className="flex gap-1">
-            {[0, 1, 2].map((offset) => (
+          {/* Mode tabs */}
+          <div className="flex gap-1 rounded-lg border border-border bg-card p-1 shadow-card">
+            {([
+              { key: "month", label: "Months" },
+              { key: "custom", label: "Custom" },
+              { key: "all", label: "All time" },
+            ] as const).map((m) => (
               <button
-                key={offset}
-                onClick={() => setMonthIdx(offset)}
+                key={m.key}
+                onClick={() => setViewMode(m.key)}
                 className={cn(
-                  "rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-                  monthIdx === offset
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-card text-muted-foreground hover:text-foreground"
+                  "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  viewMode === m.key
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                {offset === 0 ? "This month" : offset === 1 ? "Last month" : monthOptions[offset].label.split(" ")[0]}
+                {m.label}
               </button>
             ))}
           </div>
+
+          {viewMode === "month" && (
+            <>
+              {/* Month selector */}
+              <div className="flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1.5 shadow-card">
+                <button
+                  onClick={() => setMonthIdx((i) => Math.min(i + 1, monthOptions.length - 1))}
+                  disabled={monthIdx >= monthOptions.length - 1}
+                  className="rounded p-1 hover:bg-muted disabled:opacity-30 transition-colors"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="min-w-[160px] text-center text-sm font-semibold">
+                  {selectedMonth.label}
+                </span>
+                <button
+                  onClick={() => setMonthIdx((i) => Math.max(i - 1, 0))}
+                  disabled={monthIdx <= 0}
+                  className="rounded p-1 hover:bg-muted disabled:opacity-30 transition-colors"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Quick month jumps */}
+              <div className="flex gap-1">
+                {[0, 1, 2].map((offset) => (
+                  <button
+                    key={offset}
+                    onClick={() => setMonthIdx(offset)}
+                    className={cn(
+                      "rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
+                      monthIdx === offset
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-card text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {offset === 0 ? "This month" : offset === 1 ? "Last month" : monthOptions[offset].label.split(" ")[0]}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {viewMode === "custom" && (
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-2 py-1.5 shadow-card">
+              <Input
+                type="date"
+                value={customFrom}
+                max={customTo}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="h-8 w-[150px] border-none shadow-none focus-visible:ring-0"
+              />
+              <span className="text-sm text-muted-foreground">to</span>
+              <Input
+                type="date"
+                value={customTo}
+                min={customFrom}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="h-8 w-[150px] border-none shadow-none focus-visible:ring-0"
+              />
+            </div>
+          )}
 
           {/* Search */}
           <div className="relative ml-auto w-full max-w-xs">
@@ -227,17 +298,17 @@ const Payments = () => {
               ) : rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
-                    No payments in {selectedMonth.label}.
-                    {monthIdx === 0 && (
+                    No payments {viewMode === "all" ? "recorded yet" : `in ${periodLabel}`}.
+                    {viewMode !== "all" && (
                       <span className="block mt-1 text-xs">
                         Try{" "}
                         <button
-                          onClick={() => setMonthIdx(1)}
+                          onClick={() => setViewMode("all")}
                           className="text-primary underline"
                         >
-                          last month
+                          all time
                         </button>{" "}
-                        to see recent transactions.
+                        to see every transaction.
                       </span>
                     )}
                   </TableCell>
