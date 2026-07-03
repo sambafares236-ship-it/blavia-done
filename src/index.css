@@ -45,8 +45,8 @@ All colors MUST be HSL.
         --gradient-success: linear-gradient(135deg, hsl(160 84% 35%), hsl(160 84% 45%));
         --shadow-card: 0 1px 2px hsl(222 47% 11% / 0.04), 0 4px 16px hsl(222 47% 11% / 0.05);
         --shadow-elevated: 0 4px 12px hsl(222 47% 11% / 0.15), 0 16px 40px hsl(222 47% 11% / 0.1);
-        /* Sidebar — dark navy with gold accent */
-        --sidebar-background: 222 47% 9%;
+        /* Sidebar — dark navy with gold accent, matches --navy / logo background exactly */
+        --sidebar-background: 222 47% 11%;
         --sidebar-foreground: 215 20% 75%;
         --sidebar-primary: 45 93% 47%;
         --sidebar-primary-foreground: 222 47% 11%;
