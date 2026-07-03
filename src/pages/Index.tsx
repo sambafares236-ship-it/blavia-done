@@ -23,6 +23,7 @@ import {
 } from "@/components/dashboard/DashboardSections";
 import { TaxObligationsCard } from "@/components/dashboard/TaxObligationsCard";
 import { ChatbotWidget } from "@/components/dashboard/ChatbotWidget";
+import { OnboardingChecklist } from "@/components/dashboard/OnboardingChecklist";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -189,6 +190,8 @@ const Index = () => {
             </Button>
           </div>
         </section>
+
+        <OnboardingChecklist />
 
         {/* KPIs */}
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

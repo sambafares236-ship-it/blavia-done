@@ -9,6 +9,7 @@ import Landing from "./pages/Landing.tsx";
 import Login from "./pages/Login.tsx";
 import Signup from "./pages/Signup.tsx";
 import Index from "./pages/Index.tsx";
+import Onboarding from "./pages/Onboarding.tsx";
 import ExecutiveDashboard from "./pages/ExecutiveDashboard.tsx";
 import Analytics from "./pages/Analytics.tsx";
 import Payroll from "./pages/Payroll.tsx";
@@ -45,6 +46,7 @@ const App = () => (
             <Route path="/pay/:id" element={<PublicPayInvoice />} />
 
             {/* Protected */}
+            <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
             <Route path="/executive" element={<ProtectedRoute><ExecutiveDashboard /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />

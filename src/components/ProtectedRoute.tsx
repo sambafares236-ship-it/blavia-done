@@ -3,7 +3,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 
 export const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
-  const { user, loading, profileLoading } = useAuth();
+  const { user, loading, profileLoading, business } = useAuth();
   const location = useLocation();
   const [timedOut, setTimedOut] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -37,6 +37,14 @@ export const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // annual_turnover is null only for a business that never finished the
+  // onboarding step — gate every other protected page behind it so tax
+  // logic (Dashboard, Tax Center) never silently defaults to "exempt".
+  const needsOnboarding = business && business.annual_turnover === null;
+  if (needsOnboarding && location.pathname !== "/onboarding") {
+    return <Navigate to="/onboarding" replace />;
   }
 
   return children;
