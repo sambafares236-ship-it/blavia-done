@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/use-toast";
-import { Plus, Trash2, ArrowLeft, Save, Send, User, Check, Banknote } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, Save, Send, User, Check } from "lucide-react";
 
 interface LineItem {
   description: string;
@@ -94,8 +94,6 @@ const CreateInvoice = () => {
   const hasEmail = clientEmail.trim().length > 3;
 
   const getActionLabel = () => {
-    if (hasPhone && hasEmail) return "Save & Send (STK + Email)";
-    if (hasPhone) return "Save & Send STK Push";
     if (hasEmail) return "Save & Send Email";
     return "Save Draft";
   };
@@ -264,7 +262,10 @@ const CreateInvoice = () => {
         p_business_id: businessId,
       });
 
-      const willSend = sendAfter && (hasPhone || hasEmail);
+      // "Sent" now means an email actually went out — no more auto-firing an
+      // STK push on save. Phone is still captured for records and for the
+      // manual "Request Payment" STK trigger on the invoice detail page.
+      const willSend = sendAfter && hasEmail;
 
       const { data: invoice, error: invError } = await supabase
         .from("invoices")
@@ -316,31 +317,9 @@ const CreateInvoice = () => {
         }
       }
 
-      // STK Push
-      if (willSend && hasPhone) {
-        const { data: stkData, error: stkErr } = await supabase.functions.invoke("mpesa-stk-push", {
-          body: {
-            invoice_id: invoice.id,
-            phone_number: clientPhone,
-            amount: parseFloat(grandTotal.toFixed(2)),
-            account_reference: invNum,
-            transaction_desc: notes || "Payment for goods/services",
-          },
-        });
-        if (stkErr || !stkData?.success) {
-          toast({
-            title: "Invoice saved but STK Push failed",
-            description: stkData?.error || "You can retry from the invoice page",
-            variant: "destructive",
-          });
-        } else {
-          toast({ title: "STK Push sent!", description: `Check ${clientPhone} for the M-Pesa prompt` });
-        }
-      }
-
-      if (!willSend || (!hasPhone && !hasEmail)) {
+      if (!willSend) {
         toast({ title: "Invoice saved as draft" });
-      } else if (!hasPhone && hasEmail) {
+      } else {
         toast({ title: "Invoice saved!", description: "Email queued — will be sent within 2 minutes" });
       }
 
@@ -351,128 +330,6 @@ const CreateInvoice = () => {
       setSaving(false);
     }
   };
-
-  // ── Cash payment handler ──────────────────────────────────────────────────
-  const handleCashSave = async () => {
-    if (!businessId) {
-      toast({ title: "Business not loaded", variant: "destructive" });
-      return;
-    }
-    if (items.some(i => !i.description.trim())) {
-      toast({ title: "Please fill in all item descriptions", variant: "destructive" });
-      return;
-    }
-    if (grandTotal <= 0) {
-      toast({ title: "Invoice total must be greater than zero", variant: "destructive" });
-      return;
-    }
-
-    setSaving(true);
-    try {
-      // Resolve contact — default to "Cash Customer"
-      let finalContactId: string | null = contactId;
-      if (!finalContactId) {
-        const name = clientName.trim() || "Cash Customer";
-        const { data: existing } = await supabase
-          .from("contacts")
-          .select("id")
-          .eq("business_id", businessId)
-          .eq("name", name)
-          .limit(1)
-          .single();
-
-        if (existing) {
-          finalContactId = existing.id;
-        } else {
-          const { data: created } = await supabase
-            .from("contacts")
-            .insert({
-              business_id: businessId,
-              name,
-              phone: clientPhone || null,
-              email: clientEmail || null,
-            })
-            .select("id")
-            .single();
-          finalContactId = created?.id ?? null;
-        }
-      }
-
-      const { data: invNum } = await supabase.rpc("generate_invoice_number", {
-        p_business_id: businessId,
-      });
-
-      const now = new Date().toISOString();
-
-      // Create invoice as paid
-      const { data: invoice, error: invError } = await supabase
-        .from("invoices")
-        .insert({
-          business_id: businessId,
-          contact_id: finalContactId,
-          invoice_number: invNum,
-          status: "paid",
-          issue_date: todayStr(),
-          due_date: dueDate || null,
-          subtotal: parseFloat(subtotal.toFixed(2)),
-          vat_amount: parseFloat(totalVat.toFixed(2)),
-          total: parseFloat(grandTotal.toFixed(2)),
-          notes: notes || null,
-          payment_method: "cash",
-          customer_email: clientEmail || null,
-          customer_phone: clientPhone || null,
-          sent_at: now,
-          paid_at: now,
-        })
-        .select()
-        .single();
-
-      if (invError) throw invError;
-
-      // Insert line items
-      await supabase.from("invoice_items").insert(
-        items.map(item => ({
-          invoice_id: invoice.id,
-          business_id: businessId,
-          description: item.description,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          tax_code: item.tax_code,
-          vat_amount: item.vat_amount,
-          total: item.total,
-        }))
-      );
-
-      // Auto-create income transaction
-      const { error: txnError } = await supabase.from("transactions").insert({
-        business_id: businessId,
-        amount: parseFloat(grandTotal.toFixed(2)),
-        txn_type: "Income",
-        txn_date: todayStr(),
-        narration: `Cash payment — ${invNum}`,
-        category: "Sales",
-        ref_number: invNum,
-        source_bank: "Cash",
-        status: "Approved",
-        approved_at: now,
-        input_source: "manual",
-      });
-
-      if (txnError) {
-        console.error("Transaction create error:", txnError);
-        toast({ title: "Invoice saved but transaction recording failed", variant: "destructive" });
-      } else {
-        toast({ title: "Cash invoice saved!", description: `${invNum} marked as paid and recorded in transactions.` });
-      }
-
-      navigate(`/invoices/${invoice.id}`);
-    } catch (err: any) {
-      toast({ title: "Error saving invoice", description: err.message, variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
 
   return (
     <AppShell>
@@ -532,9 +389,6 @@ const CreateInvoice = () => {
                 onChange={(e) => handlePhoneChange(e.target.value)}
                 onFocus={() => phoneSuggestions.length > 0 && setShowPhoneSugg(true)}
               />
-              {hasPhone && !matchedContact && (
-                <p className="text-xs text-green-600">→ STK Push will fire on save</p>
-              )}
               {showPhoneSugg && phoneSuggestions.length > 0 && (
                 <div className="absolute z-20 top-full mt-1 w-full rounded-md border bg-popover shadow-lg overflow-hidden">
                   {phoneSuggestions.map(c => (
@@ -718,10 +572,6 @@ const CreateInvoice = () => {
           <Button onClick={() => handleSave(true)} disabled={saving} className="gap-2 bg-green-600 hover:bg-green-700">
             <Send className="h-4 w-4" />
             {saving ? "Saving..." : getActionLabel()}
-          </Button>
-          <Button onClick={handleCashSave} disabled={saving} className="gap-2 bg-amber-600 hover:bg-amber-700">
-            <Banknote className="h-4 w-4" />
-            {saving ? "Saving..." : "Paid — Cash"}
           </Button>
         </div>
 
