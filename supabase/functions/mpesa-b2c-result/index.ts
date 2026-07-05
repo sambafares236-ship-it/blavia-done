@@ -32,45 +32,49 @@ serve(async (req) => {
 
     const isSuccess = resultCode === 0;
 
+    const failureReference = !isSuccess
+      ? `ResultCode ${resultCode}: ${resultDesc || "Unknown error"}`
+      : conversationId;
+
     // Update payslip payment status
     if (payslipId) {
       await supabase
         .from("payslips")
         .update({
           payment_status: isSuccess ? "paid" : "failed",
-          payment_reference: conversationId,
+          payment_reference: failureReference,
           paid_at: isSuccess ? new Date().toISOString() : null,
         })
         .eq("id", payslipId);
 
-      // If paid — check if all payslips in the run are paid
-      if (isSuccess) {
-        const { data: payslip } = await supabase
+      // Roll up payroll_runs.status after EVERY callback (success or
+      // failure) — a run whose last callback is a failure must not
+      // stay stuck at "draft".
+      const { data: payslip } = await supabase
+        .from("payslips")
+        .select("payroll_run_id")
+        .eq("id", payslipId)
+        .single();
+
+      if (payslip?.payroll_run_id) {
+        const { data: allPayslips } = await supabase
           .from("payslips")
-          .select("payroll_run_id")
-          .eq("id", payslipId)
-          .single();
+          .select("payment_status")
+          .eq("payroll_run_id", payslip.payroll_run_id);
 
-        if (payslip?.payroll_run_id) {
-          const { data: allPayslips } = await supabase
-            .from("payslips")
-            .select("payment_status")
-            .eq("payroll_run_id", payslip.payroll_run_id);
+        const allPaid = allPayslips?.every(p => p.payment_status === "paid");
+        const anyFailed = allPayslips?.some(p => p.payment_status === "failed");
 
-          const allPaid = allPayslips?.every(p => p.payment_status === "paid");
-          const anyFailed = allPayslips?.some(p => p.payment_status === "failed");
-
-          if (allPaid) {
-            await supabase
-              .from("payroll_runs")
-              .update({ status: "completed" })
-              .eq("id", payslip.payroll_run_id);
-          } else if (anyFailed) {
-            await supabase
-              .from("payroll_runs")
-              .update({ status: "partial" })
-              .eq("id", payslip.payroll_run_id);
-          }
+        if (allPaid) {
+          await supabase
+            .from("payroll_runs")
+            .update({ status: "completed" })
+            .eq("id", payslip.payroll_run_id);
+        } else if (anyFailed) {
+          await supabase
+            .from("payroll_runs")
+            .update({ status: "partial" })
+            .eq("id", payslip.payroll_run_id);
         }
       }
     }
