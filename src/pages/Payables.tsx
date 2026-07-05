@@ -3,6 +3,7 @@ import { CheckCircle, Download, FileText, Plus, Search, Wallet } from "lucide-re
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Table, TableBody, TableCell, TableHead,
@@ -38,7 +39,10 @@ interface Payable {
   status: string;
   reference_number: string | null;
   due_date: string | null;
+  receipt_path: string | null;
 }
+
+const RECEIPT_BUCKET = "payable-receipts";
 
 const Payables = () => {
   const { profile } = useAuth();
@@ -48,22 +52,42 @@ const Payables = () => {
   const [bucketFilter, setBucketFilter] = useState<Bucket | "all">("all");
   const [addOpen, setAddOpen] = useState(false);
   const [payTarget, setPayTarget] = useState<Payable | null>(null);
+  const [receiptUrls, setReceiptUrls] = useState<Record<string, string>>({});
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const loadPayables = async () => {
     if (!profile?.business_id) return;
     setLoading(true);
     const { data, error } = await supabase
       .from("payments")
-      .select("id, payment_type, amount, narration, status, reference_number, due_date")
+      .select("id, payment_type, amount, narration, status, reference_number, due_date, receipt_path")
       .eq("business_id", profile.business_id)
       .eq("status", "pending")
       .order("due_date", { ascending: true, nullsFirst: false });
     if (error) {
       toast({ title: "Couldn't load payables", description: error.message, variant: "destructive" });
-    } else {
-      setPayables((data ?? []) as Payable[]);
+      setLoading(false);
+      return;
     }
+    const rows = (data ?? []) as Payable[];
+    setPayables(rows);
     setLoading(false);
+
+    const paths = rows.map((r) => r.receipt_path).filter((p): p is string => !!p);
+    if (paths.length > 0) {
+      const { data: signed, error: signError } = await supabase.storage
+        .from(RECEIPT_BUCKET)
+        .createSignedUrls(paths, 3600);
+      if (!signError && signed) {
+        const map: Record<string, string> = {};
+        signed.forEach((s) => {
+          if (s.path && s.signedUrl) map[s.path] = s.signedUrl;
+        });
+        setReceiptUrls(map);
+      }
+    } else {
+      setReceiptUrls({});
+    }
   };
 
   useEffect(() => {
@@ -254,7 +278,21 @@ const Payables = () => {
               ) : (
                 rows.map((p) => (
                   <TableRow key={p.id} className="hover:bg-muted/30">
-                    <TableCell className="text-sm font-medium">{p.narration || "—"}</TableCell>
+                    <TableCell className="text-sm font-medium">
+                      <div className="flex items-center gap-2">
+                        {p.receipt_path && receiptUrls[p.receipt_path] && (
+                          <button
+                            type="button"
+                            onClick={() => setLightboxUrl(receiptUrls[p.receipt_path!])}
+                            className="h-8 w-8 shrink-0 overflow-hidden rounded border border-border bg-muted/30"
+                            title="View invoice photo"
+                          >
+                            <img src={receiptUrls[p.receipt_path]} alt="Invoice" className="h-full w-full object-cover" />
+                          </button>
+                        )}
+                        {p.narration || "—"}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{p.payment_type || "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{fmtDate(p.due_date)}</TableCell>
                     <TableCell className="text-right font-semibold tabular-nums">{fmtKES(p.amount)}</TableCell>
@@ -303,6 +341,15 @@ const Payables = () => {
           onRecorded={finalizePaid}
         />
       )}
+
+      <Dialog open={!!lightboxUrl} onOpenChange={(o) => !o && setLightboxUrl(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogTitle className="sr-only">Invoice photo</DialogTitle>
+          {lightboxUrl && (
+            <img src={lightboxUrl} alt="Invoice" className="max-h-[80vh] w-full rounded-md object-contain" />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <ChatbotWidget />
     </AppShell>

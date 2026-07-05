@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ImageIcon, Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -10,6 +11,9 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
+
+const RECEIPT_BUCKET = "payable-receipts";
+const MAX_RECEIPT_BYTES = 8 * 1024 * 1024; // phone-camera photo of a document, not a small logo
 
 export const PAYABLE_CATEGORIES = ["Supplier", "Rent", "Utilities", "Loan Repayment", "Tax", "Salaries", "Other"] as const;
 
@@ -28,6 +32,11 @@ export const AddPayableDialog = ({ open, onOpenChange, businessId, onSaved }: Pr
   const [reference, setReference] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const receiptInputRef = useRef<HTMLInputElement>(null);
+  const [receiptPath, setReceiptPath] = useState<string | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+  const [receiptUploading, setReceiptUploading] = useState(false);
+
   useEffect(() => {
     if (open) {
       setPayee("");
@@ -35,8 +44,46 @@ export const AddPayableDialog = ({ open, onOpenChange, businessId, onSaved }: Pr
       setAmount("0");
       setDueDate("");
       setReference("");
+      setReceiptPath(null);
+      setReceiptPreview(null);
     }
   }, [open]);
+
+  const handleReceiptSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !businessId) return;
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Please select an image file", variant: "destructive" });
+      return;
+    }
+    if (file.size > MAX_RECEIPT_BYTES) {
+      toast({ title: "Image must be less than 8MB", variant: "destructive" });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => setReceiptPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+    setReceiptUploading(true);
+    try {
+      const fileExt = file.name.split(".").pop();
+      const filePath = `${businessId}/${crypto.randomUUID()}.${fileExt}`;
+      const { error: uploadError } = await supabase.storage
+        .from(RECEIPT_BUCKET)
+        .upload(filePath, file);
+      if (uploadError) throw uploadError;
+      setReceiptPath(filePath);
+    } catch (err: any) {
+      toast({ title: "Receipt upload failed", description: err.message, variant: "destructive" });
+      setReceiptPreview(null);
+    } finally {
+      setReceiptUploading(false);
+    }
+  };
+
+  const handleRemoveReceipt = () => {
+    setReceiptPath(null);
+    setReceiptPreview(null);
+  };
 
   const handleSave = async () => {
     if (!payee.trim()) {
@@ -57,6 +104,7 @@ export const AddPayableDialog = ({ open, onOpenChange, businessId, onSaved }: Pr
       status: "pending",
       reference_number: reference.trim() || null,
       due_date: dueDate || null,
+      receipt_path: receiptPath,
     });
     setSaving(false);
     if (error) {
@@ -129,12 +177,55 @@ export const AddPayableDialog = ({ open, onOpenChange, businessId, onSaved }: Pr
               />
             </div>
           </div>
+          <div className="space-y-2">
+            <Label>Invoice photo (optional)</Label>
+            <div className="flex items-center gap-4">
+              <div className="flex h-16 w-16 items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/30 overflow-hidden shrink-0">
+                {receiptPreview ? (
+                  <img src={receiptPreview} alt="Invoice" className="h-full w-full object-cover" />
+                ) : (
+                  <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <input
+                  ref={receiptInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleReceiptSelect}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => receiptInputRef.current?.click()}
+                  disabled={receiptUploading}
+                  className="gap-2"
+                >
+                  {receiptUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                  {receiptUploading ? "Uploading…" : receiptPreview ? "Replace photo" : "Attach photo"}
+                </Button>
+                {receiptPreview && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRemoveReceipt}
+                    className="gap-2 text-red-500 hover:text-red-600 hover:bg-red-50"
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleSave} disabled={saving || receiptUploading}>
             {saving ? "Saving…" : "Save"}
           </Button>
         </DialogFooter>
