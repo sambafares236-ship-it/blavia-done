@@ -105,7 +105,7 @@ serve(async (req) => {
       bhfId: config.branch_id || "00",
       orgInvcNo: 0,
       cisInvcNo: invoice.invoice_number,
-      custTin: null, // customer KRA PIN — null if B2C
+      custTin: null, // customer KRA PIN ï¿½ null if B2C
       custNm: invoice.contacts?.name || "Retail Customer",
       rcptTyCd: "S",   // S = Sale
       pmtTyCd: pmtCodeMap[invoice.payment_method] || "01",
@@ -149,7 +149,7 @@ serve(async (req) => {
         return {
           itemSeq: index + 1,
           itemCd: item.id, // use item UUID as item code
-          itemClsCd: "5020230602", // default class code — general goods
+          itemClsCd: "5020230602", // default class code ï¿½ general goods
           itemNm: item.description,
           bcd: null,
           pkgUnitCd: "NT",
@@ -174,78 +174,121 @@ serve(async (req) => {
 
     console.log("Sending invoice to KRA:", JSON.stringify(kraInvoice));
 
-    // 5. POST to KRA with correct headers
-    const kraRes = await fetch(`${baseUrl}/trnsSalesSave`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "tin": config.kra_pin,
-        "bhfId": config.branch_id || "00",
-        "cmcKey": config.cmc_key,
-      },
-      body: JSON.stringify(kraInvoice),
-    });
+    // 5-7. POST to KRA and persist the outcome. Wrapped separately from the
+    // outer catch so a network failure/timeout/non-JSON response (KRA
+    // unreachable, not just KRA rejecting the invoice) still gets recorded as
+    // a "failed" attempt instead of leaving the invoice's etims_status
+    // untouched and invisible to any retry/alert polling.
+    try {
+      const kraRes = await fetch(`${baseUrl}/trnsSalesSave`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "tin": config.kra_pin,
+          "bhfId": config.branch_id || "00",
+          "cmcKey": config.cmc_key,
+        },
+        body: JSON.stringify(kraInvoice),
+      });
 
-    const kraResult = await kraRes.json();
-    console.log("KRA response:", JSON.stringify(kraResult));
+      const kraResult = await kraRes.json();
+      console.log("KRA response:", JSON.stringify(kraResult));
 
-    const success = kraResult.resultCd === "000";
-    const cuin = kraResult.data?.invoiceNo || null;
-    const qrCode = kraResult.data?.qrCode || null;
-    const receiptNo = kraResult.data?.receiptNo || null;
+      const success = kraResult.resultCd === "000";
+      const cuin = kraResult.data?.invoiceNo || null;
+      const qrCode = kraResult.data?.qrCode || null;
+      const receiptNo = kraResult.data?.receiptNo || null;
 
-    // 6. Save to etims_invoices audit table
-    await supabase.from("etims_invoices").insert({
-      business_id,
-      invoice_id,
-      invoice_number: invoice.invoice_number,
-      cuin,
-      customer_name: invoice.contacts?.name || "Retail Customer",
-      customer_pin: null,
-      total_amount: invoice.total,
-      vat_amount: invoice.vat_amount,
-      status: success ? "accepted" : "failed",
-      etims_receipt_no: receiptNo,
-      qr_code: qrCode,
-      submitted_at: new Date().toISOString(),
-      raw_request: kraInvoice,
-      raw_response: kraResult,
-    });
-
-    // 7. Update the invoice record with KRA data
-    await supabase
-      .from("invoices")
-      .update({
-        etims_status: success ? "submitted" : "failed",
-        cuin: cuin,
+      // 6. Save to etims_invoices audit table
+      await supabase.from("etims_invoices").insert({
+        business_id,
+        invoice_id,
+        invoice_number: invoice.invoice_number,
+        cuin,
+        customer_name: invoice.contacts?.name || "Retail Customer",
+        customer_pin: null,
+        total_amount: invoice.total,
+        vat_amount: invoice.vat_amount,
+        status: success ? "accepted" : "failed",
         etims_receipt_no: receiptNo,
-        etims_submitted_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", invoice_id);
+        qr_code: qrCode,
+        submitted_at: new Date().toISOString(),
+        raw_request: kraInvoice,
+        raw_response: kraResult,
+      });
 
-    if (!success) {
+      // 7. Update the invoice record with KRA data
+      await supabase
+        .from("invoices")
+        .update({
+          etims_status: success ? "submitted" : "failed",
+          cuin: cuin,
+          etims_receipt_no: receiptNo,
+          etims_submitted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", invoice_id);
+
+      if (!success) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `KRA rejected invoice: ${kraResult.resultMsg}`,
+            kra_code: kraResult.resultCd,
+            kra_response: kraResult,
+          }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          cuin,
+          receipt_no: receiptNo,
+          qr_code: qrCode,
+          kra_response: kraResult,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    } catch (kraErr) {
+      console.error("etims-send-invoice KRA call failed:", kraErr);
+
+      await supabase.from("etims_invoices").insert({
+        business_id,
+        invoice_id,
+        invoice_number: invoice.invoice_number,
+        cuin: null,
+        customer_name: invoice.contacts?.name || "Retail Customer",
+        customer_pin: null,
+        total_amount: invoice.total,
+        vat_amount: invoice.vat_amount,
+        status: "failed",
+        etims_receipt_no: null,
+        qr_code: null,
+        submitted_at: new Date().toISOString(),
+        raw_request: kraInvoice,
+        raw_response: { network_error: true, message: kraErr.message },
+      });
+
+      await supabase
+        .from("invoices")
+        .update({
+          etims_status: "failed",
+          etims_submitted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", invoice_id);
+
       return new Response(
         JSON.stringify({
           success: false,
-          error: `KRA rejected invoice: ${kraResult.resultMsg}`,
-          kra_code: kraResult.resultCd,
-          kra_response: kraResult,
+          error: `Could not reach KRA eTIMS: ${kraErr.message}`,
+          kra_code: null,
         }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        cuin,
-        receipt_no: receiptNo,
-        qr_code: qrCode,
-        kra_response: kraResult,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
 
   } catch (err) {
     console.error("etims-send-invoice error:", err);
