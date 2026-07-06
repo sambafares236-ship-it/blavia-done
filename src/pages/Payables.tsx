@@ -9,7 +9,6 @@ import {
   Table, TableBody, TableCell, TableHead,
   TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ChatbotWidget } from "@/components/dashboard/ChatbotWidget";
 import { AddPayableDialog } from "@/components/payments/AddPayableDialog";
 import { RecordPaymentDialog } from "@/components/payments/RecordPaymentDialog";
 import { PaymentMethod } from "@/lib/instantPayments";
@@ -444,8 +443,6 @@ const Payables = () => {
           )}
         </DialogContent>
       </Dialog>
-
-      <ChatbotWidget />
     </AppShell>
   );
 };

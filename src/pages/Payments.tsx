@@ -8,7 +8,6 @@ import {
   Table, TableBody, TableCell, TableHead,
   TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ChatbotWidget } from "@/components/dashboard/ChatbotWidget";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { RecordPaymentDialog } from "@/components/payments/RecordPaymentDialog";
 import { supabase, Transaction } from "@/lib/supabase";
@@ -373,8 +372,6 @@ const Payments = () => {
           onRecorded={loadTxns}
         />
       )}
-
-      <ChatbotWidget />
     </AppShell>
   );
 };

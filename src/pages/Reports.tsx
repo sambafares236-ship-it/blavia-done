@@ -23,7 +23,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChatbotWidget } from "@/components/dashboard/ChatbotWidget";
 import { supabase, Transaction } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
 import {
@@ -363,8 +362,6 @@ const Reports = () => {
           </TabsContent>
         </Tabs>
       </div>
-
-      <ChatbotWidget />
 
       <div style={{ position: "absolute", left: -99999, top: -99999 }} aria-hidden>
         <PrintReport id="report-pl" title="Income Statement" subtitle={`${label} · ${subtitle}`} lines={pl} />

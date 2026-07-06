@@ -5,6 +5,7 @@ import {
   ClipboardList, CreditCard, LogOut, Menu, Search, TrendingDown, Users,
 } from "lucide-react";
 import { SideNav } from "./SideNav";
+import { ChatbotWidget } from "./dashboard/ChatbotWidget";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -195,6 +196,7 @@ export const AppShell = ({ children }: AppShellProps) => {
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [read, setRead] = useState<Set<string>>(new Set());
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -263,7 +265,11 @@ export const AppShell = ({ children }: AppShellProps) => {
 
   return (
     <div className="flex min-h-screen bg-background">
-      <SideNav open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <SideNav
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        onOpenChat={() => setChatOpen(true)}
+      />
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
@@ -405,6 +411,8 @@ export const AppShell = ({ children }: AppShellProps) => {
 
         <main className="flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
       </div>
+
+      <ChatbotWidget open={chatOpen} onOpenChange={setChatOpen} />
     </div>
   );
 };

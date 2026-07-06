@@ -28,9 +28,10 @@ const links = [
 interface SideNavProps {
   open?: boolean;
   onClose?: () => void;
+  onOpenChat?: () => void;
 }
 
-export const SideNav = ({ open = false, onClose }: SideNavProps) => {
+export const SideNav = ({ open = false, onClose, onOpenChat }: SideNavProps) => {
   const { user, profile, business, signOut } = useAuth();
   const navigate = useNavigate();
 
@@ -102,10 +103,14 @@ export const SideNav = ({ open = false, onClose }: SideNavProps) => {
           ))}
 
           <div className="pt-2">
-            <div className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/70">
+            <button
+              type="button"
+              onClick={() => { onOpenChat?.(); onClose?.(); }}
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-white"
+            >
               <Sparkles className="h-4 w-4" strokeWidth={2.25} />
               AI Assistant
-            </div>
+            </button>
           </div>
         </nav>
 

@@ -9,7 +9,6 @@ import {
   Table, TableBody, TableCell, TableHead,
   TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ChatbotWidget } from "@/components/dashboard/ChatbotWidget";
 import { supabase } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
 import { downloadCsv, printTableAsPdf } from "@/lib/exporters";
@@ -262,8 +261,6 @@ const Receivables = () => {
           </Table>
         </div>
       </div>
-
-      <ChatbotWidget />
     </AppShell>
   );
 };

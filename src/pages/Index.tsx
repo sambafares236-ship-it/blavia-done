@@ -22,7 +22,6 @@ import {
   PayrollQuickActionsCard,
 } from "@/components/dashboard/DashboardSections";
 import { TaxObligationsCard } from "@/components/dashboard/TaxObligationsCard";
-import { ChatbotWidget } from "@/components/dashboard/ChatbotWidget";
 import { OnboardingChecklist } from "@/components/dashboard/OnboardingChecklist";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -310,8 +309,6 @@ const Index = () => {
           <TransactionsTable rows={filteredRows} loading={loading} />
         </section>
       </div>
-
-      <ChatbotWidget />
     </AppShell>
   );
 };

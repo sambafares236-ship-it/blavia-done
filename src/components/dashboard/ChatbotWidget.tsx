@@ -152,9 +152,13 @@ KENYAN TAX RATES:
 - Withholding Tax: 5% on professional fees, 3% on construction
 - Turnover Tax (TOT): 3% for businesses below KES 5M annual revenue`;
 
-export const ChatbotWidget = () => {
+interface ChatbotWidgetProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export const ChatbotWidget = ({ open, onOpenChange }: ChatbotWidgetProps) => {
   const { profile, business } = useAuth();
-  const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [businessContext, setBusinessContext] = useState<string>("");
@@ -242,7 +246,7 @@ ${ctx}`;
     <>
       {/* Floating button */}
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => onOpenChange(!open)}
         className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary shadow-lg transition-transform hover:scale-105 active:scale-95"
         aria-label="Open AI Assistant"
       >
@@ -270,7 +274,7 @@ ${ctx}`;
               </p>
             </div>
             <button
-              onClick={() => setOpen(false)}
+              onClick={() => onOpenChange(false)}
               className="text-primary-foreground/70 hover:text-primary-foreground"
             >
               <X className="h-4 w-4" />

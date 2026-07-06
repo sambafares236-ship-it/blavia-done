@@ -7,7 +7,6 @@ import { EmployeesSection } from "@/components/payroll/EmployeesSection";
 import { PayslipsSection } from "@/components/payroll/PayslipsSection";
 import { RunPayrollSection } from "@/components/payroll/RunPayrollSection";
 import { PayrollHistorySection } from "@/components/payroll/PayrollHistorySection";
-import { ChatbotWidget } from "@/components/dashboard/ChatbotWidget";
 
 const Payroll = () => {
   const [params, setParams] = useSearchParams();
@@ -88,8 +87,6 @@ const Payroll = () => {
           </TabsContent>
         </Tabs>
       </div>
-
-      <ChatbotWidget />
     </AppShell>
   );
 };

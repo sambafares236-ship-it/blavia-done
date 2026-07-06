@@ -6,7 +6,6 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChatbotWidget } from "@/components/dashboard/ChatbotWidget";
 import { supabase, Transaction } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
 import { VatTab } from "@/components/tax/VatTab";
@@ -235,7 +234,6 @@ const Tax = () => {
           </Tabs>
         )}
       </div>
-      <ChatbotWidget />
     </AppShell>
   );
 };
