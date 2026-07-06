@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { CheckCircle, Download, FileText, Plus, Search, Wallet } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle, Download, FileText, Loader2, Plus, Search, Smartphone, Wallet } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -40,6 +40,8 @@ interface Payable {
   reference_number: string | null;
   due_date: string | null;
   receipt_path: string | null;
+  till_number: string | null;
+  b2b_result: string | null;
 }
 
 const RECEIPT_BUCKET = "payable-receipts";
@@ -54,13 +56,15 @@ const Payables = () => {
   const [payTarget, setPayTarget] = useState<Payable | null>(null);
   const [receiptUrls, setReceiptUrls] = useState<Record<string, string>>({});
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [payingId, setPayingId] = useState<number | null>(null);
+  const pollRef = useRef<{ interval: ReturnType<typeof setInterval>; timeout: ReturnType<typeof setTimeout> } | null>(null);
 
   const loadPayables = async () => {
     if (!profile?.business_id) return;
     setLoading(true);
     const { data, error } = await supabase
       .from("payments")
-      .select("id, payment_type, amount, narration, status, reference_number, due_date, receipt_path")
+      .select("id, payment_type, amount, narration, status, reference_number, due_date, receipt_path, till_number, b2b_result")
       .eq("business_id", profile.business_id)
       .eq("status", "pending")
       .order("due_date", { ascending: true, nullsFirst: false });
@@ -93,6 +97,15 @@ const Payables = () => {
   useEffect(() => {
     loadPayables();
   }, [profile?.business_id]);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current.interval);
+        clearTimeout(pollRef.current.timeout);
+      }
+    };
+  }, []);
 
   const today = todayStr();
 
@@ -144,6 +157,63 @@ const Payables = () => {
     }
     setPayTarget(null);
     loadPayables();
+  };
+
+  const handlePayNow = async (p: Payable) => {
+    if (!p.till_number) return;
+    setPayingId(p.id);
+
+    const { data, error } = await supabase.functions.invoke("mpesa-b2b", {
+      body: { payment_id: p.id },
+    });
+
+    if (error || !data?.success) {
+      toast({
+        title: "B2B payment failed",
+        description: data?.error || "Could not initiate the M-Pesa payment",
+        variant: "destructive",
+      });
+      setPayingId(null);
+      loadPayables();
+      return;
+    }
+
+    toast({ title: "Payment initiated!", description: `Sending KES ${fmtKES(p.amount)} to till ${p.till_number}…` });
+
+    if (pollRef.current) {
+      clearInterval(pollRef.current.interval);
+      clearTimeout(pollRef.current.timeout);
+    }
+
+    const interval = setInterval(async () => {
+      const { data: row } = await supabase
+        .from("payments")
+        .select("status, b2b_result")
+        .eq("id", p.id)
+        .single();
+
+      if (row?.status === "paid") {
+        clearInterval(interval);
+        clearTimeout(timeout);
+        setPayingId(null);
+        toast({ title: "Payable paid!", description: `${p.narration || "Payment"} settled via M-Pesa.` });
+        loadPayables();
+      } else if (row?.b2b_result) {
+        clearInterval(interval);
+        clearTimeout(timeout);
+        setPayingId(null);
+        toast({ title: "B2B payment failed", description: row.b2b_result, variant: "destructive" });
+        loadPayables();
+      }
+    }, 5000);
+
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+      setPayingId(null);
+      loadPayables();
+    }, 120000);
+
+    pollRef.current = { interval, timeout };
   };
 
   const headers = ["Payee", "Category", "Due Date", "Amount (KES)", "Aging"];
@@ -290,7 +360,12 @@ const Payables = () => {
                             <img src={receiptUrls[p.receipt_path]} alt="Invoice" className="h-full w-full object-cover" />
                           </button>
                         )}
-                        {p.narration || "—"}
+                        <div>
+                          {p.narration || "—"}
+                          {p.b2b_result && (
+                            <p className="text-[11px] text-red-600">Last B2B attempt: {p.b2b_result}</p>
+                          )}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{p.payment_type || "—"}</TableCell>
@@ -305,9 +380,28 @@ const Payables = () => {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="sm" onClick={() => setPayTarget(p)} className="gap-1">
-                        <CheckCircle className="h-3.5 w-3.5" /> Mark Paid
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        {p.till_number && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handlePayNow(p)}
+                            disabled={payingId === p.id}
+                            className="gap-1 border-green-300 text-green-700 hover:bg-green-50"
+                            title={`Pay via M-Pesa to till ${p.till_number}`}
+                          >
+                            {payingId === p.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Smartphone className="h-3.5 w-3.5" />
+                            )}
+                            Pay Now
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setPayTarget(p)} className="gap-1">
+                          <CheckCircle className="h-3.5 w-3.5" /> Mark Paid
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

@@ -80,6 +80,11 @@ serve(async (req) => {
         shortcode: config.shortcode,
         passkey: config.passkey,
         environment: config.environment,
+        // B2C and B2B (Business to Business) share the same Daraja API
+        // user, so the initiator/security credential pair works for both.
+        b2c_shortcode: config.b2c_shortcode,
+        b2c_initiator_name: config.b2c_initiator_name,
+        b2c_security_credential: config.b2c_security_credential,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

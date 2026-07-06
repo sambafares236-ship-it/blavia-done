@@ -30,6 +30,7 @@ export const AddPayableDialog = ({ open, onOpenChange, businessId, onSaved }: Pr
   const [amount, setAmount] = useState("0");
   const [dueDate, setDueDate] = useState("");
   const [reference, setReference] = useState("");
+  const [tillNumber, setTillNumber] = useState("");
   const [saving, setSaving] = useState(false);
 
   const receiptInputRef = useRef<HTMLInputElement>(null);
@@ -44,6 +45,7 @@ export const AddPayableDialog = ({ open, onOpenChange, businessId, onSaved }: Pr
       setAmount("0");
       setDueDate("");
       setReference("");
+      setTillNumber("");
       setReceiptPath(null);
       setReceiptPreview(null);
     }
@@ -104,6 +106,7 @@ export const AddPayableDialog = ({ open, onOpenChange, businessId, onSaved }: Pr
       status: "pending",
       reference_number: reference.trim() || null,
       due_date: dueDate || null,
+      till_number: tillNumber.trim() || null,
       receipt_path: receiptPath,
     });
     setSaving(false);
@@ -176,6 +179,18 @@ export const AddPayableDialog = ({ open, onOpenChange, businessId, onSaved }: Pr
                 placeholder="Invoice/PO number…"
               />
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="pay-till">Vendor till number (optional)</Label>
+            <Input
+              id="pay-till"
+              value={tillNumber}
+              onChange={(e) => setTillNumber(e.target.value)}
+              placeholder="e.g. 123456"
+            />
+            <p className="text-xs text-muted-foreground">
+              Lets you pay this bill straight from Blavia via M-Pesa Buy Goods (B2B).
+            </p>
           </div>
           <div className="space-y-2">
             <Label>Invoice photo (optional)</Label>
