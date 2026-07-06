@@ -89,52 +89,71 @@ serve(async (req) => {
       console.error("Error updating transaction:", updateError);
     }
 
-    if (resultCode === 0 && transaction?.invoice_id) {
-      const { data: invoiceData } = await supabase
-        .from("invoices")
-        .update({
-          status: "paid",
-          paid_at: new Date().toISOString(),
-          mpesa_reference: mpesaReceiptNumber,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", transaction.invoice_id)
-        .select("invoice_number")
+    if (resultCode === 0 && transaction?.business_id) {
+      // ── Idempotency — Safaricom retries STK callbacks that don't get a
+      // fast 200. Without this guard a retry would double-book the payment.
+      const { data: existingTxn } = await supabase
+        .from("transactions")
+        .select("id")
+        .eq("ref_number", mpesaReceiptNumber)
+        .limit(1);
+
+      if (existingTxn && existingTxn.length > 0) {
+        console.log("Duplicate STK callback, already recorded:", mpesaReceiptNumber);
+        return new Response(
+          JSON.stringify({ ResultCode: 0, ResultDesc: "Accepted" }),
+          { headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      let invoiceNumber: string | null = null;
+
+      if (transaction.invoice_id) {
+        const { data: invoiceData } = await supabase
+          .from("invoices")
+          .update({
+            status: "paid",
+            paid_at: new Date().toISOString(),
+            mpesa_reference: mpesaReceiptNumber,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", transaction.invoice_id)
+          .select("invoice_number")
+          .single();
+        invoiceNumber = invoiceData?.invoice_number || transaction.account_reference || null;
+      }
+
+      await supabase.from("transactions").insert({
+        business_id: transaction.business_id,
+        txn_date: new Date().toISOString().split("T")[0],
+        narration: transaction.invoice_id
+          ? `M-Pesa payment - ${mpesaReceiptNumber}`
+          : `M-Pesa STK payment - ${transaction.transaction_desc || mpesaReceiptNumber}`,
+        amount: amount,
+        txn_type: "Income",
+        category: "M-Pesa Payments",
+        status: "Approved",
+        ref_number: mpesaReceiptNumber,
+        input_source: "mpesa",
+      });
+
+      // ── Fetch business for name + owner WhatsApp ──────────
+      const { data: business } = await supabase
+        .from("businesses")
+        .select("business_name, whatsapp_number")
+        .eq("id", transaction.business_id)
         .single();
 
-      if (transaction?.business_id) {
-        await supabase.from("transactions").insert({
-          business_id: transaction.business_id,
-          txn_date: new Date().toISOString().split("T")[0],
-          narration: `M-Pesa payment - ${mpesaReceiptNumber}`,
-          amount: amount,
-          txn_type: "Income",
-          category: "M-Pesa Payments",
-          status: "Approved",
-          ref_number: mpesaReceiptNumber,
-          input_source: "mpesa",
-        });
+      // ── 1. Receipt to the CUSTOMER who paid ────────────────
+      if (phoneNumber) {
+        const customerMsg = `✅ *Payment Received!*\n\nThank you for your payment to *${business?.business_name || "the business"}*.\n\n💰 Amount: *${fmt(amount)}*\n🧾 Receipt: *${mpesaReceiptNumber}*\n${invoiceNumber ? `📄 Invoice: *${invoiceNumber}*\n` : ""}\n_Powered by BLAVIA_`;
+        await sendWhatsApp(phoneNumber, customerMsg);
+      }
 
-        // ── Fetch business for name + owner WhatsApp ──────────
-        const { data: business } = await supabase
-          .from("businesses")
-          .select("business_name, whatsapp_number")
-          .eq("id", transaction.business_id)
-          .single();
-
-        const invoiceNumber = invoiceData?.invoice_number || transaction.account_reference || "";
-
-        // ── 1. Receipt to the CUSTOMER who paid ────────────────
-        if (phoneNumber) {
-          const customerMsg = `✅ *Payment Received!*\n\nThank you for your payment to *${business?.business_name || "the business"}*.\n\n💰 Amount: *${fmt(amount)}*\n🧾 Receipt: *${mpesaReceiptNumber}*\n${invoiceNumber ? `📄 Invoice: *${invoiceNumber}*\n` : ""}\n_Powered by BLAVIA_`;
-          await sendWhatsApp(phoneNumber, customerMsg);
-        }
-
-        // ── 2. Alert to the BUSINESS OWNER ─────────────────────
-        if (business?.whatsapp_number) {
-          const ownerMsg = `💰 *Payment Received!*\n\nYou just received *${fmt(amount)}* via M-Pesa.\n\n🧾 Receipt: *${mpesaReceiptNumber}*\n${invoiceNumber ? `📄 Invoice: *${invoiceNumber}*\n` : ""}📱 From: ${phoneNumber}\n\n_Powered by BLAVIA_`;
-          await sendWhatsApp(business.whatsapp_number, ownerMsg);
-        }
+      // ── 2. Alert to the BUSINESS OWNER ─────────────────────
+      if (business?.whatsapp_number) {
+        const ownerMsg = `💰 *Payment Received!*\n\nYou just received *${fmt(amount)}* via M-Pesa.\n\n🧾 Receipt: *${mpesaReceiptNumber}*\n${invoiceNumber ? `📄 Invoice: *${invoiceNumber}*\n` : ""}📱 From: ${phoneNumber}\n\n_Powered by BLAVIA_`;
+        await sendWhatsApp(business.whatsapp_number, ownerMsg);
       }
     }
 
