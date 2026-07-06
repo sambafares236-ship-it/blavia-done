@@ -76,8 +76,6 @@ const InvoiceDetail = () => {
   const [updating, setUpdating] = useState(false);
   const [etimsSubmitting, setEtimsSubmitting] = useState(false);
 
-  const [hasMpesa, setHasMpesa] = useState(false);
-
   const [payAmount, setPayAmount] = useState("");
   const [payPhone, setPayPhone] = useState("");
   const [payEmail, setPayEmail] = useState("");
@@ -85,8 +83,6 @@ const InvoiceDetail = () => {
   const [payDescription, setPayDescription] = useState("Payment for goods/services");
 
   const [sending, setSending] = useState(false);
-  const [stkSent, setStkSent] = useState(false);
-  const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
   const [emailSentForInvoice, setEmailSentForInvoice] = useState(false);
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
 
@@ -94,7 +90,6 @@ const InvoiceDetail = () => {
     if (id && user) {
       fetchInvoice();
       fetchBusiness();
-      checkMpesaConfig();
     }
   }, [id, user]);
 
@@ -119,57 +114,6 @@ const InvoiceDetail = () => {
       setPayEmail(invoice.contacts.email);
     }
   }, [invoice]);
-
-  useEffect(() => {
-    if (!stkSent || !checkoutRequestId) return;
-
-    const interval = setInterval(async () => {
-      const { data } = await supabase
-        .from("mpesa_transactions")
-        .select("status, mpesa_receipt_number")
-        .eq("checkout_request_id", checkoutRequestId)
-        .single();
-
-      if (data?.status === "success") {
-        clearInterval(interval);
-        setStkSent(false);
-        toast({ title: "Payment received!", description: `M-Pesa receipt: ${data.mpesa_receipt_number}` });
-        fetchInvoice();
-      } else if (data?.status === "failed" || data?.status === "cancelled") {
-        clearInterval(interval);
-        setStkSent(false);
-        toast({ title: "Payment failed or cancelled", variant: "destructive" });
-      }
-    }, 5000);
-
-    const timeout = setTimeout(() => {
-      clearInterval(interval);
-      setStkSent(false);
-    }, 120000);
-
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
-    };
-  }, [stkSent, checkoutRequestId]);
-
-  const checkMpesaConfig = async () => {
-    if (!user) return;
-    const { data: biz } = await supabase
-      .from("businesses")
-      .select("id")
-      .eq("owner_id", user.id)
-      .limit(1)
-      .single();
-    if (!biz) return;
-    const { data: config } = await supabase
-      .from("mpesa_configs")
-      .select("id")
-      .eq("business_id", biz.id)
-      .eq("is_active", true)
-      .single();
-    setHasMpesa(!!config);
-  };
 
   const fetchBusiness = async () => {
     const { data } = await supabase
@@ -213,24 +157,19 @@ const InvoiceDetail = () => {
     setLoading(false);
   };
 
-  const isDueToday = payDueDate <= todayStr();
   const hasPhone = !!payPhone.trim();
   const hasEmail = !!payEmail.trim();
 
   const getActionLabel = () => {
-    if (hasPhone && hasEmail && isDueToday) return "Send STK Push + Email";
-    if (hasPhone && hasEmail && !isDueToday) return "Send Email + Schedule STK";
-    if (hasPhone && !hasEmail && isDueToday) return "Send STK Push Now";
-    if (hasPhone && !hasEmail && !isDueToday) return "Schedule STK Push";
-    if (!hasPhone && hasEmail) return "Send Invoice Email";
-    return "Enter a phone or email";
+    if (!hasEmail) return "Enter an email to send";
+    return emailSentForInvoice ? "Resend Invoice Email" : "Send Invoice Email";
   };
 
-  const canSend = hasPhone || hasEmail;
+  const canSend = hasEmail;
 
   const handleSmartSend = async () => {
     if (!invoice || !canSend) {
-      toast({ title: "Enter a phone number or email first", variant: "destructive" });
+      toast({ title: "Enter an email address first", variant: "destructive" });
       return;
     }
 
@@ -240,7 +179,7 @@ const InvoiceDetail = () => {
       .from("invoices")
       .update({
         customer_phone: hasPhone ? payPhone.trim() : null,
-        customer_email: hasEmail ? payEmail.trim() : null,
+        customer_email: payEmail.trim(),
         payment_description: payDescription.trim() || "Payment for goods/services",
         due_date: payDueDate,
         total: Number(payAmount) || invoice.total,
@@ -255,63 +194,31 @@ const InvoiceDetail = () => {
       return;
     }
 
-    // Queue the email only if not already queued/sent — guarded twice:
-    // here on the frontend, and at the database via a unique index.
-    if (hasEmail && !emailSentForInvoice) {
-      const { error: queueError } = await supabase.from("invoice_queue").insert({
-        invoice_id: invoice.id,
-        business_id: invoice.business_id,
-        contact_id: invoice.contact_id,
-        action: "send_email",
-        status: "pending",
-      });
+    // Owner can resend on demand — every click queues a fresh row. The
+    // 2-minute n8n poller picks it up and emails the payment details
+    // (amount, due date, pay link) to the customer.
+    const wasAlreadySent = emailSentForInvoice;
+    const { error: queueError } = await supabase.from("invoice_queue").insert({
+      invoice_id: invoice.id,
+      business_id: invoice.business_id,
+      contact_id: invoice.contact_id,
+      action: "send_email",
+      status: "pending",
+    });
 
-      if (queueError) {
-        if (queueError.code === "23505") {
-          toast({
-            title: "Email already queued",
-            description: "This invoice already has a pending or sent email — no need to send again.",
-          });
-          setEmailSentForInvoice(true);
-        } else {
-          toast({ title: "Error queuing email", description: queueError.message, variant: "destructive" });
-        }
-      } else {
-        setEmailSentForInvoice(true);
-        toast({ title: "Invoice queued for email" });
-      }
-    } else if (hasEmail && emailSentForInvoice) {
-      toast({ title: "Email already sent", description: "This invoice's email has already been queued previously." });
-    }
-
-    if (hasPhone && isDueToday) {
-      let phone = payPhone.replace(/\s/g, "");
-      if (phone.startsWith("0")) phone = "254" + phone.slice(1);
-      if (phone.startsWith("+")) phone = phone.slice(1);
-
-      const { data, error } = await supabase.functions.invoke("mpesa-stk-push", {
-        body: {
-          invoice_id: invoice.id,
-          phone_number: phone,
-          amount: Number(payAmount) || invoice.total,
-          account_reference: invoice.invoice_number,
-          transaction_desc: payDescription,
-        },
-      });
-
-      if (error || !data?.success) {
+    if (queueError) {
+      if (queueError.code === "23505") {
         toast({
-          title: "STK Push failed",
-          description: data?.error || "Could not send payment request",
-          variant: "destructive",
+          title: "Email already queued",
+          description: "This invoice already has an email pending — it'll go out shortly.",
         });
+        setEmailSentForInvoice(true);
       } else {
-        setCheckoutRequestId(data.checkout_request_id);
-        setStkSent(true);
-        toast({ title: "STK Push sent!", description: `Check ${payPhone} for the M-Pesa prompt` });
+        toast({ title: "Error queuing email", description: queueError.message, variant: "destructive" });
       }
-    } else if (hasPhone && !isDueToday) {
-      toast({ title: "STK Push scheduled", description: `Will be sent automatically on ${formatDate(payDueDate)}` });
+    } else {
+      setEmailSentForInvoice(true);
+      toast({ title: wasAlreadySent ? "Invoice email resent" : "Invoice queued for email" });
     }
 
     fetchInvoice();
@@ -443,7 +350,7 @@ const InvoiceDetail = () => {
         {showPaymentPanel && (
           <div className="rounded-xl border-2 border-green-200 bg-green-50 p-5 space-y-4">
             <div className="flex items-center gap-2">
-              <Smartphone className="h-5 w-5 text-green-600" />
+              <Mail className="h-5 w-5 text-green-600" />
               <h3 className="font-semibold text-green-800">Request Payment</h3>
               {invoice.id && (
                 <button
@@ -455,8 +362,7 @@ const InvoiceDetail = () => {
               )}
             </div>
 
-            {!stkSent ? (
-              <>
+            <>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label className="text-green-800 text-xs">Amount (KES)</Label>
@@ -475,9 +381,6 @@ const InvoiceDetail = () => {
                       onChange={(e) => setPayDueDate(e.target.value)}
                       className="bg-white border-green-300"
                     />
-                    <p className="text-[11px] text-green-600">
-                      {isDueToday ? "Today — STK Push fires immediately" : "Future date — STK Push will be scheduled"}
-                    </p>
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-green-800 text-xs flex items-center gap-1">
@@ -512,19 +415,10 @@ const InvoiceDetail = () => {
                   </div>
                 </div>
 
-                {!hasMpesa && hasPhone && isDueToday && (
-                  <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                    M-Pesa isn't configured yet —{" "}
-                    <button onClick={() => navigate("/mpesa-settings")} className="underline font-medium">set it up</button>
-                    {" "}to enable instant STK Push.
-                  </div>
-                )}
-
                 {hasEmail && emailSentForInvoice && (
                   <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
                     <CheckCircle className="h-3.5 w-3.5 shrink-0" />
-                    An email has already been queued or sent for this invoice.
+                    An email has already been sent for this invoice — sending again will resend it.
                   </div>
                 )}
 
@@ -540,27 +434,6 @@ const InvoiceDetail = () => {
                   )}
                 </Button>
               </>
-            ) : (
-              <div className="flex items-center gap-3 bg-white rounded-lg border border-green-200 p-4">
-                <Loader2 className="h-5 w-5 animate-spin text-green-600" />
-                <div>
-                  <p className="text-sm font-medium text-green-800">
-                    Waiting for payment from {payPhone}...
-                  </p>
-                  <p className="text-xs text-green-600">
-                    Customer should see an M-Pesa prompt. Page updates automatically when paid.
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setStkSent(false)}
-                  className="ml-auto shrink-0 border-green-300 text-green-700"
-                >
-                  Cancel
-                </Button>
-              </div>
-            )}
           </div>
         )}
 
