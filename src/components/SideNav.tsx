@@ -12,10 +12,10 @@ import { toast } from "@/components/ui/use-toast";
 const links = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/executive", label: "Executive BI", icon: Gauge },
-  { to: "/payments", label: "Payments", icon: Wallet },
+  { to: "/payments", label: "Transactions", icon: Wallet },
   { to: "/invoices", label: "Invoices", icon: FileText },
-  { to: "/receivables", label: "Receivables", icon: Hourglass },
-  { to: "/payables", label: "Payables", icon: Receipt },
+  { to: "/receivables", label: "Account Receivables", icon: Hourglass },
+  { to: "/payables", label: "Account Payable", icon: Receipt },
   { to: "/scheduled-expenses", label: "Scheduled Expenses", icon: CalendarClock },
   { to: "/balance-sheet", label: "Assets & Liabilities", icon: Landmark },
   { to: "/payroll", label: "Payroll", icon: Users },
