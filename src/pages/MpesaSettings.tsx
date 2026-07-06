@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/use-toast";
-import { Smartphone, Shield, CheckCircle, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { Smartphone, Shield, CheckCircle, AlertCircle, Eye, EyeOff, Radio } from "lucide-react";
 
 const MpesaSettings = () => {
   const { user } = useAuth();
@@ -17,6 +17,9 @@ const MpesaSettings = () => {
   const [showPasskey, setShowPasskey] = useState(false);
   const [hasConfig, setHasConfig] = useState(false);
   const [testResult, setTestResult] = useState<"success" | "failed" | null>(null);
+  const [c2bRegistered, setC2bRegistered] = useState(false);
+  const [c2bRegisteredAt, setC2bRegisteredAt] = useState<string | null>(null);
+  const [registeringC2b, setRegisteringC2b] = useState(false);
 
   const [config, setConfig] = useState({
     consumer_key: "",
@@ -65,6 +68,8 @@ const MpesaSettings = () => {
           b2c_initiator_name: existing.b2c_initiator_name || "",
           b2c_security_credential: existing.b2c_security_credential || "",
         });
+        setC2bRegistered(!!existing.c2b_registered);
+        setC2bRegisteredAt(existing.c2b_registered_at || null);
       }
     };
     fetchData();
@@ -117,6 +122,35 @@ const MpesaSettings = () => {
       toast({ title: "Connection failed", variant: "destructive" });
     }
     setTesting(false);
+  };
+
+  const handleRegisterC2b = async () => {
+    if (!businessId) return;
+    setRegisteringC2b(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("mpesa-c2b-register", {
+        body: { business_id: businessId },
+      });
+
+      if (error || !data?.success) {
+        toast({
+          title: "C2B registration failed",
+          description: data?.error || "Could not register callback URLs with Safaricom",
+          variant: "destructive",
+        });
+      } else {
+        setC2bRegistered(true);
+        setC2bRegisteredAt(new Date().toISOString());
+        toast({
+          title: "C2B callbacks registered!",
+          description: "Safaricom will now notify Blavia of every Paybill/Till payment.",
+        });
+      }
+    } catch (err: any) {
+      toast({ title: "C2B registration failed", description: err.message, variant: "destructive" });
+    }
+    setRegisteringC2b(false);
   };
 
   return (
@@ -294,13 +328,69 @@ const MpesaSettings = () => {
           </div>
         </div>
 
+        {/* C2B Callback Registration */}
+        <div className="rounded-xl border bg-card p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold flex items-center gap-2">
+                <Radio className="h-4 w-4 text-primary" />
+                C2B Callbacks
+                <span className="text-xs text-muted-foreground font-normal">(Paybill/Till payment notifications)</span>
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Tells Safaricom where to send notifications whenever a customer pays your Paybill or Till directly — Blavia then matches the payment to an invoice automatically.
+              </p>
+            </div>
+            {c2bRegistered && (
+              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+                <CheckCircle className="h-3.5 w-3.5" />
+                Registered
+              </span>
+            )}
+          </div>
+
+          {c2bRegisteredAt && (
+            <p className="text-xs text-muted-foreground">
+              Last registered {new Date(c2bRegisteredAt).toLocaleString("en-KE")}
+            </p>
+          )}
+
+          {!hasConfig && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700">
+              Save your STK Push credentials above first — C2B registration needs a working Daraja connection.
+            </div>
+          )}
+
+          <Button
+            variant="outline"
+            onClick={handleRegisterC2b}
+            disabled={!hasConfig || registeringC2b}
+            className="gap-2"
+          >
+            {registeringC2b ? "Registering..." : c2bRegistered ? "Re-register C2B Callbacks" : "Register C2B Callbacks"}
+          </Button>
+        </div>
+
         {/* Callback URL Info */}
-        <div className="rounded-xl border bg-muted/30 p-4">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Callback URL (set this in Daraja portal)</p>
-          <code className="text-xs bg-background border rounded px-2 py-1 block break-all">
-            https://pvawptdrpapdhhwdoyxz.supabase.co/functions/v1/mpesa-callback
-          </code>
-          <p className="text-xs text-muted-foreground mt-2">Copy this URL and paste it as the Confirmation URL and Validation URL in your Daraja app settings.</p>
+        <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">STK Push Callback URL</p>
+            <code className="text-xs bg-background border rounded px-2 py-1 block break-all">
+              https://pvawptdrpapdhhwdoyxz.supabase.co/functions/v1/mpesa-callback
+            </code>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">C2B Confirmation / Validation URLs</p>
+            <code className="text-xs bg-background border rounded px-2 py-1 block break-all">
+              https://pvawptdrpapdhhwdoyxz.supabase.co/functions/v1/mpesa-c2b-confirmation
+            </code>
+            <code className="text-xs bg-background border rounded px-2 py-1 block break-all mt-1">
+              https://pvawptdrpapdhhwdoyxz.supabase.co/functions/v1/mpesa-c2b-validation
+            </code>
+            <p className="text-xs text-muted-foreground mt-2">
+              "Register C2B Callbacks" above sets these with Safaricom automatically — no manual paste needed. Shown here for reference only.
+            </p>
+          </div>
         </div>
 
         {/* Test Result */}

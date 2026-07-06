@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { RecordPaymentDialog } from "@/components/payments/RecordPaymentDialog";
+import { UnmatchedPaymentsSection } from "@/components/payments/UnmatchedPaymentsSection";
 import { supabase, Transaction } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
 import { downloadCsv, printTableAsPdf } from "@/lib/exporters";
@@ -156,6 +157,10 @@ const Payments = () => {
             </Button>
           </div>
         </header>
+
+        {profile?.business_id && (
+          <UnmatchedPaymentsSection businessId={profile.business_id} onMatched={loadTxns} />
+        )}
 
         {/* Summary cards */}
         <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
