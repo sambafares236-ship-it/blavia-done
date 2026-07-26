@@ -40,6 +40,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { supabase, Transaction } from "@/lib/supabase";
+import type { Database } from "@/lib/database.types";
 import { toast } from "@/components/ui/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -86,7 +87,7 @@ const isCogs = (category: string | null | undefined) => {
 
 const isIncome = (t: Transaction) => (t.txn_type ?? "").toLowerCase() === "income";
 const amountOf = (t: Transaction) => Math.abs(Number(t.amount) || 0);
-const methodOf = (t: Transaction) => (t.source ?? t.source_bank ?? "Other") as string;
+const methodOf = (t: Transaction) => t.source_bank ?? "Other";
 
 /** Statuses that count as real money by default, matching the Dashboard. */
 const APPROVED_STATUSES = ["approved", "auto-approved"];
@@ -99,31 +100,25 @@ const toDate = (v: string | null | undefined) => {
 };
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-/** Supabase returns an embedded one-to-one as an object or a single-element array. */
-type Embedded<T> = T | T[] | null;
-const firstOf = <T,>(v: Embedded<T>): T | null =>
-  Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+/**
+ * Row shapes are projected off the generated schema rather than hand-written,
+ * so renaming or dropping a column upstream breaks the build here instead of
+ * silently producing NaN in a KPI.
+ */
+type Tables = Database["public"]["Tables"];
 
-type InvoiceRow = {
-  id: string;
-  status: string | null;
-  issue_date: string | null;
-  due_date: string | null;
-  paid_at: string | null;
-  subtotal: number | null;
-  vat_amount: number | null;
-  total: number | null;
-  contacts?: Embedded<{ name: string | null }>;
-};
-type InvoiceItemRow = {
-  invoice_id: string;
-  quantity: number | null;
-  total: number | null;
-};
-type AssetRow = { category: string | null; value: number | null };
-type LiabilityRow = { category: string | null; value: number | null; due_on: string | null };
-type ScheduledExpenseRow = { amount: number | null; next_due: string; status: string | null };
-type EmployeeRow = { status: string | null; basic_salary: number | null };
+type InvoiceRow = Pick<
+  Tables["invoices"]["Row"],
+  "id" | "status" | "issue_date" | "due_date" | "paid_at" | "subtotal" | "vat_amount" | "total"
+> & { contacts: Pick<Tables["contacts"]["Row"], "name"> | null };
+type InvoiceItemRow = Pick<Tables["invoice_items"]["Row"], "invoice_id" | "quantity" | "total">;
+type AssetRow = Pick<Tables["assets"]["Row"], "category" | "value">;
+type LiabilityRow = Pick<Tables["liabilities"]["Row"], "category" | "value" | "due_on">;
+type ScheduledExpenseRow = Pick<
+  Tables["scheduled_expenses"]["Row"],
+  "amount" | "next_due" | "status"
+>;
+type EmployeeRow = Pick<Tables["employees"]["Row"], "status" | "basic_salary">;
 
 /** Asset categories that represent spendable cash rather than book value. */
 const LIQUID_ASSET_CATEGORIES = ["cash", "bank"];
@@ -362,13 +357,13 @@ const ExecutiveDashboard = () => {
     if (firstError) {
       toast({ title: "Couldn't load data", description: firstError.message, variant: "destructive" });
     }
-    setTxns((txRes.data ?? []) as Transaction[]);
-    setInvoices((invRes.data ?? []) as InvoiceRow[]);
-    setInvoiceItems((itemRes.data ?? []) as InvoiceItemRow[]);
-    setAssets((assetRes.data ?? []) as AssetRow[]);
-    setLiabilities((liabRes.data ?? []) as LiabilityRow[]);
-    setScheduled((schedRes.data ?? []) as ScheduledExpenseRow[]);
-    setEmployees((empRes.data ?? []) as EmployeeRow[]);
+    setTxns(txRes.data ?? []);
+    setInvoices(invRes.data ?? []);
+    setInvoiceItems(itemRes.data ?? []);
+    setAssets(assetRes.data ?? []);
+    setLiabilities(liabRes.data ?? []);
+    setScheduled(schedRes.data ?? []);
+    setEmployees(empRes.data ?? []);
 
     setLoading(false);
     setRefreshing(false);
@@ -800,7 +795,7 @@ const ExecutiveDashboard = () => {
   const customers = useMemo(() => {
     const map = new Map<string, { invoiced: number; paid: number; count: number }>();
     currentInvoices.forEach((inv) => {
-      const name = firstOf(inv.contacts)?.name?.trim() || "Unnamed customer";
+      const name = inv.contacts?.name?.trim() || "Unnamed customer";
       if (!map.has(name)) map.set(name, { invoiced: 0, paid: 0, count: 0 });
       const slot = map.get(name)!;
       const amount = Number(inv.total) || 0;

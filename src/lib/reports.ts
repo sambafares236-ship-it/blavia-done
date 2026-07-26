@@ -267,7 +267,7 @@ export const cashFlow = (txns: Transaction[]): ReportLine[] => {
 
   // Channel split (M-Pesa vs Bank vs Cash)
   const channel = (t: Transaction) =>
-    (t.source_bank || t.source || "Other").toString();
+    (t.source_bank || "Other").toString();
 
   const inflowByChannel = approved
     .filter(isIncome)

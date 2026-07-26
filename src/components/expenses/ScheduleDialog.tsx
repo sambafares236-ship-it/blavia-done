@@ -20,6 +20,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 const FREQUENCIES = [
   { v: "one_off", label: "One-off" },
@@ -59,6 +60,7 @@ interface Props {
 const today = () => new Date().toISOString().slice(0, 10);
 
 export const ScheduleDialog = ({ open, onOpenChange, initial, onSaved }: Props) => {
+  const { profile } = useAuth();
   const [vendor, setVendor] = useState("");
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [amount, setAmount] = useState("0");
@@ -100,9 +102,24 @@ export const ScheduleDialog = ({ open, onOpenChange, initial, onSaved }: Props) 
       auto_post: autoPost,
       notes: notes.trim() || null,
     };
-    const { error } = initial?.id
-      ? await supabase.from("scheduled_expenses").update(payload).eq("id", initial.id)
-      : await supabase.from("scheduled_expenses").insert(payload);
+    // business_id is NOT NULL and gated by the tenant RLS policy, so a new
+    // row has to carry it explicitly. Updates leave it as-is.
+    let error;
+    if (initial?.id) {
+      ({ error } = await supabase
+        .from("scheduled_expenses")
+        .update(payload)
+        .eq("id", initial.id));
+    } else {
+      if (!profile?.business_id) {
+        setSaving(false);
+        toast({ title: "No business selected", variant: "destructive" });
+        return;
+      }
+      ({ error } = await supabase
+        .from("scheduled_expenses")
+        .insert({ ...payload, business_id: profile.business_id }));
+    }
     setSaving(false);
     if (error) {
       toast({ title: "Couldn't save", description: error.message, variant: "destructive" });

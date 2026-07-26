@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import type { Database } from "@/lib/database.types";
 import { useAuth } from "@/contexts/AuthContext";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -10,16 +11,13 @@ import {
   CheckCircle, XCircle, AlertCircle,
 } from "lucide-react";
 
-interface Invoice {
-  id: string;
-  invoice_number: string;
-  status: string;
-  issue_date: string;
-  due_date: string;
-  total: number;
-  currency: string;
-  contacts: { name: string; email: string };
-}
+type Tables = Database["public"]["Tables"];
+
+/** Projected off the generated schema so it cannot drift from the database. */
+type Invoice = Pick<
+  Tables["invoices"]["Row"],
+  "id" | "invoice_number" | "status" | "issue_date" | "due_date" | "total" | "currency"
+> & { contacts: Pick<Tables["contacts"]["Row"], "name" | "email"> | null };
 
 interface Business {
   id: string;
@@ -217,14 +215,14 @@ const Invoices = () => {
                         <span className="font-medium text-sm">{invoice.invoice_number}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <p className="text-sm font-medium">{invoice.contacts?.name || "—"}</p>
+                        <p className="text-sm font-medium">{invoice.contacts?.name || "â€”"}</p>
                         <p className="text-xs text-muted-foreground">{invoice.contacts?.email || ""}</p>
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">
-                        {invoice.issue_date ? new Date(invoice.issue_date).toLocaleDateString("en-KE") : "—"}
+                        {invoice.issue_date ? new Date(invoice.issue_date).toLocaleDateString("en-KE") : "â€”"}
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">
-                        {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString("en-KE") : "—"}
+                        {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString("en-KE") : "â€”"}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <span className="font-semibold text-sm">{formatCurrency(invoice.total)}</span>

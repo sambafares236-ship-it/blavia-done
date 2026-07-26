@@ -471,7 +471,7 @@ export const RunPayrollSection = () => {
                     onCheckedChange={(v) => setSelected((s) => ({ ...s, [r.employee.id]: !!v }))}
                   />
                 </TableCell>
-                <TableCell className="font-medium">{r.employee.employee_id ?? "—"}</TableCell>
+                <TableCell className="font-medium">{r.employee.id.slice(0, 8)}</TableCell>
                 <TableCell className="text-muted-foreground">{r.employee.id_number ?? "—"}</TableCell>
                 <TableCell>
                   <div className="font-medium">{r.employee.full_name}</div>

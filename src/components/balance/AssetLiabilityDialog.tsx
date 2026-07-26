@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 export type Mode = "asset" | "liability";
 
@@ -64,11 +65,10 @@ export const AssetLiabilityDialog = ({
   initial,
   onSaved,
 }: Props) => {
+  const { profile } = useAuth();
   const isAsset = mode === "asset";
   const cats = isAsset ? ASSET_CATEGORIES : LIAB_CATEGORIES;
   const dateLabel = isAsset ? "Acquired on" : "Due on";
-  const dateField = isAsset ? "acquired_on" : "due_on";
-  const table = isAsset ? "assets" : "liabilities";
 
   const [name, setName] = useState("");
   const [category, setCategory] = useState(cats[0]);
@@ -93,17 +93,48 @@ export const AssetLiabilityDialog = ({
       return;
     }
     setSaving(true);
-    const payload: Record<string, unknown> = {
+
+    // Assets and liabilities differ only in their date column, but branching on
+    // the concrete table keeps each payload checked against its own row type
+    // instead of collapsing to Record<string, unknown>. Both are tenant-scoped
+    // by RLS, so an insert has to carry business_id.
+    const common = {
       name: name.trim(),
       category,
       value: Number(value) || 0,
-      [dateField]: dateVal || null,
       notes: notes.trim() || null,
     };
 
-    const { error } = initial?.id
-      ? await supabase.from(table).update(payload).eq("id", initial.id)
-      : await supabase.from(table).insert(payload);
+    let error;
+    if (isAsset) {
+      const payload = { ...common, acquired_on: dateVal || null };
+      if (initial?.id) {
+        ({ error } = await supabase.from("assets").update(payload).eq("id", initial.id));
+      } else {
+        if (!profile?.business_id) {
+          setSaving(false);
+          toast({ title: "No business selected", variant: "destructive" });
+          return;
+        }
+        ({ error } = await supabase
+          .from("assets")
+          .insert({ ...payload, business_id: profile.business_id }));
+      }
+    } else {
+      const payload = { ...common, due_on: dateVal || null };
+      if (initial?.id) {
+        ({ error } = await supabase.from("liabilities").update(payload).eq("id", initial.id));
+      } else {
+        if (!profile?.business_id) {
+          setSaving(false);
+          toast({ title: "No business selected", variant: "destructive" });
+          return;
+        }
+        ({ error } = await supabase
+          .from("liabilities")
+          .insert({ ...payload, business_id: profile.business_id }));
+      }
+    }
 
     setSaving(false);
     if (error) {

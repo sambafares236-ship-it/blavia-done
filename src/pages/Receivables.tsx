@@ -10,6 +10,7 @@ import {
   TableHeader, TableRow,
 } from "@/components/ui/table";
 import { supabase } from "@/lib/supabase";
+import type { Database } from "@/lib/database.types";
 import { toast } from "@/components/ui/use-toast";
 import { downloadCsv, printTableAsPdf } from "@/lib/exporters";
 import { useAuth } from "@/contexts/AuthContext";
@@ -27,16 +28,13 @@ const fmtDate = (d: string | null) => {
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
-interface ReceivableInvoice {
-  id: string;
-  invoice_number: string;
-  status: string;
-  issue_date: string;
-  due_date: string | null;
-  total: number;
-  paid_at: string | null;
-  contacts: { name: string; phone: string; email: string } | null;
-}
+type Tables = Database["public"]["Tables"];
+
+/** Projected off the generated schema so it cannot drift from the database. */
+type ReceivableInvoice = Pick<
+  Tables["invoices"]["Row"],
+  "id" | "invoice_number" | "status" | "issue_date" | "due_date" | "total" | "paid_at"
+> & { contacts: Pick<Tables["contacts"]["Row"], "name" | "phone" | "email"> | null };
 
 const Receivables = () => {
   const { profile } = useAuth();
@@ -59,7 +57,7 @@ const Receivables = () => {
       if (error) {
         toast({ title: "Couldn't load receivables", description: error.message, variant: "destructive" });
       } else {
-        setInvoices((data ?? []) as unknown as ReceivableInvoice[]);
+        setInvoices(data ?? []);
       }
       setLoading(false);
     };

@@ -37,7 +37,6 @@ interface Payslip {
 interface EmployeeLite {
   id: string;
   full_name: string;
-  employee_id: string | null;
   kra_pin: string | null;
   nssf_number: string | null;
   nhif_number: string | null;
@@ -69,7 +68,7 @@ export const PayslipsSection = ({ employeeId, onClearFilter }: Props) => {
 
       const [{ data: ps, error: pErr }, { data: emps }] = await Promise.all([
         query,
-        supabase.from("employees").select("id, full_name, employee_id, kra_pin, nssf_number, nhif_number, id_number, position, department"),
+        supabase.from("employees").select("id, full_name, kra_pin, nssf_number, nhif_number, id_number, position, department"),
       ]);
 
       if (pErr) {
@@ -119,7 +118,7 @@ export const PayslipsSection = ({ employeeId, onClearFilter }: Props) => {
 
       const vals = [
         emp?.full_name ?? r.employee_id,
-        emp?.employee_id ?? "",
+        r.employee_id ?? "",
         emp?.kra_pin ?? "",
         r.period_start ?? "",
         r.period_end ?? "",
@@ -246,7 +245,7 @@ export const PayslipsSection = ({ employeeId, onClearFilter }: Props) => {
                   <TableRow key={r.id} className="hover:bg-muted/20">
                     <TableCell>
                       <div className="font-medium">{emp?.full_name ?? "—"}</div>
-                      <div className="text-[10px] text-muted-foreground">{emp?.employee_id ?? r.employee_id?.slice(0, 8)}</div>
+                      <div className="text-[10px] text-muted-foreground">{r.employee_id?.slice(0, 8) ?? "—"}</div>
                     </TableCell>
                     <TableCell>
                       <div>{r.period_start ?? "—"}</div>

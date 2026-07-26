@@ -3,9 +3,13 @@
 export type EmployeeStatus = "active" | "on_leave" | "terminated";
 export type PaymentMethod = "M-Pesa" | "Bank" | "Cash";
 
+/**
+ * Mirrors the `employees` table. Note there is no separate payroll-number
+ * column in the database — `id` is the only identifier — so the UI shows a
+ * short prefix of it wherever an employee reference is needed.
+ */
 export interface Employee {
   id: string;
-  employee_id: string | null;
   full_name: string;
   email: string | null;
   phone: string;

@@ -169,13 +169,26 @@ const Settings = () => {
       .eq("business_id", business.id)
       .maybeSingle();
     if (data) {
-      setEtimsConfig(data);
+      // environment and status are plain text columns in the database, so
+      // narrow them here rather than trusting whatever is stored.
+      setEtimsConfig({
+        ...data,
+        branch_id: data.branch_id ?? "00",
+        device_serial: data.device_serial ?? "",
+        cmc_key: data.cmc_key ?? undefined,
+        last_initialized_at: data.last_initialized_at ?? undefined,
+        error_message: data.error_message ?? undefined,
+        is_active: data.is_active ?? false,
+        environment: data.environment === "production" ? "production" : "sandbox",
+        status:
+          data.status === "active" || data.status === "error" ? data.status : "pending",
+      });
       setKraPin(data.kra_pin || "");
       setEtimsUsername(data.client_id || "");
       setEtimsPassword(data.client_secret || "");
       setBranchId(data.branch_id || "00");
       setDeviceSerial(data.device_serial || "");
-      setEnvironment(data.environment || "sandbox");
+      setEnvironment(data.environment === "production" ? "production" : "sandbox");
     }
     setEtimsLoading(false);
   };

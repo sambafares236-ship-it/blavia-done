@@ -9,6 +9,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -97,6 +98,7 @@ const dueBadge = (iso: string) => {
 };
 
 const ScheduledExpensesPage = () => {
+  const { profile } = useAuth();
   const [rows, setRows] = useState<ScheduledExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState<{ open: boolean; initial?: ScheduleInitial }>({
@@ -182,12 +184,16 @@ const ScheduledExpensesPage = () => {
   const markPaid = async (row: ScheduledExpense) => {
     const today = new Date().toISOString().slice(0, 10);
     // 1) Insert a transaction
+    if (!profile?.business_id) {
+      toast({ title: "No business selected", variant: "destructive" });
+      return;
+    }
     const { error: txErr } = await supabase.from("transactions").insert({
+      business_id: profile.business_id,
       txn_date: today,
       narration: `${row.vendor} — ${row.category}`,
       amount: -Math.abs(Number(row.amount) || 0),
       category: row.category,
-      source: row.payment_method ?? "Manual",
       source_bank: row.payment_method ?? null,
       ref_number: row.account_ref ?? null,
       status: "Approved",

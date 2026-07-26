@@ -68,7 +68,7 @@ export const EmployeeViewDialog = ({ open, onOpenChange, employee, onEdit }: Pro
             <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Personal
             </h3>
-            <Row label="Employee ID" value={employee.employee_id} />
+            <Row label="Employee ID" value={employee.id.slice(0, 8)} />
             <Row label="Email" value={employee.email} />
             <Row label="Phone" value={employee.phone} />
             <Row label="ID Number" value={employee.id_number} />

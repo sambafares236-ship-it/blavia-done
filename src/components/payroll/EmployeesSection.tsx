@@ -39,7 +39,7 @@ import { EmployeeFormDialog } from "@/components/employees/EmployeeFormDialog";
 import { EmployeeViewDialog } from "@/components/employees/EmployeeViewDialog";
 import { useAuth } from "@/contexts/AuthContext";
 
-type SortKey = "employee_id" | "full_name" | "basic_salary";
+type SortKey = "id" | "full_name" | "basic_salary";
 type SortDir = "asc" | "desc";
 
 const PAGE_SIZE = 10;
@@ -56,7 +56,7 @@ export const EmployeesSection = ({ onViewPayslips }: Props) => {
   const [deptFilter, setDeptFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
-  const [sortKey, setSortKey] = useState<SortKey>("employee_id");
+  const [sortKey, setSortKey] = useState<SortKey>("full_name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [formOpen, setFormOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
@@ -122,7 +122,7 @@ export const EmployeesSection = ({ onViewPayslips }: Props) => {
       if (!q) return true;
       return (
         (r.full_name ?? "").toLowerCase().includes(q) ||
-        (r.employee_id ?? "").toLowerCase().includes(q) ||
+        r.id.toLowerCase().includes(q) ||
         (r.phone ?? "").toLowerCase().includes(q)
       );
     });
@@ -171,7 +171,7 @@ export const EmployeesSection = ({ onViewPayslips }: Props) => {
     ) : null;
 
   const exportCsv = () => {
-    const headers = ["employee_id", "full_name", "email", "phone", "department",
+    const headers = ["id", "full_name", "email", "phone", "department",
       "position", "basic_salary", "payment_method", "status", "hire_date"];
     const lines = [headers.join(",")];
     sorted.forEach((r) => {
@@ -278,8 +278,8 @@ export const EmployeesSection = ({ onViewPayslips }: Props) => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead onClick={() => toggleSort("employee_id")} className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Employee ID <SortIcon k="employee_id" />
+                <TableHead onClick={() => toggleSort("id")} className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Employee ID <SortIcon k="id" />
                 </TableHead>
                 <TableHead onClick={() => toggleSort("full_name")} className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Name <SortIcon k="full_name" />
@@ -308,7 +308,7 @@ export const EmployeesSection = ({ onViewPayslips }: Props) => {
               {pageRows.map((r) => (
                 <TableRow key={r.id} className="cursor-pointer"
                   onClick={() => { setViewing(r); setViewOpen(true); }}>
-                  <TableCell className="font-mono text-xs">{r.employee_id ?? "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">{r.id.slice(0, 8)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
