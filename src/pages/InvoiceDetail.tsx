@@ -2,6 +2,8 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
+import { RecordEtimsDialog } from "@/components/invoices/RecordEtimsDialog";
+import { KRA_TAX_TYPES, type EtimsMode } from "@/lib/kraTax";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,13 +70,29 @@ const InvoiceDetail = () => {
   const { id } = useParams();
   const { user, business: authBusiness } = useAuth();
   const navigate = useNavigate();
-  const vatRegistered = authBusiness?.vat_registered ?? false;
+  // eTIMS applies to every business, VAT-registered or not; what differs is
+  // whether this system submits the invoice or the business issues it on KRA's
+  // own channels and records the CUIN back here.
+  const [etimsMode, setEtimsMode] = useState<EtimsMode>("none");
+  const [recordEtimsOpen, setRecordEtimsOpen] = useState(false);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [business, setBusiness] = useState<Business | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [etimsSubmitting, setEtimsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!authBusiness?.id) return;
+    supabase
+      .from("etims_configs")
+      .select("mode")
+      .eq("business_id", authBusiness.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        setEtimsMode((["oscu", "lite"] as const).find((m) => m === data?.mode) ?? "none");
+      });
+  }, [authBusiness?.id]);
 
   const [payAmount, setPayAmount] = useState("");
   const [payPhone, setPayPhone] = useState("");
@@ -228,17 +246,28 @@ const InvoiceDetail = () => {
 
   const handleSubmitEtims = async () => {
     if (!invoice) return;
+    if (!authBusiness?.id) {
+      toast({ title: "No business selected", variant: "destructive" });
+      return;
+    }
     setEtimsSubmitting(true);
     try {
+      // The function requires business_id alongside invoice_id, and verifies
+      // the caller's session belongs to that business — so send the user's
+      // access token rather than the public anon key.
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/etims-send-invoice`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           },
-          body: JSON.stringify({ invoice_id: invoice.id }),
+          body: JSON.stringify({
+            invoice_id: invoice.id,
+            business_id: authBusiness.id,
+          }),
         }
       );
       const result = await res.json();
@@ -511,14 +540,16 @@ const InvoiceDetail = () => {
             </table>
 
             <div className="mt-4 space-y-2 ml-auto max-w-xs">
-              {vatRegistered && (
+              {/* Driven by the invoice, not the business: an all-exempt invoice
+                  from a VAT-registered business has no VAT to break out either. */}
+              {Number(invoice.vat_amount) > 0 && (
                 <>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Subtotal (excl. VAT)</span>
                     <span>{formatCurrency(invoice.subtotal)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">VAT (16%)</span>
+                    <span className="text-muted-foreground">VAT ({KRA_TAX_TYPES.standard.rate}%)</span>
                     <span>{formatCurrency(invoice.vat_amount)}</span>
                   </div>
                 </>
@@ -545,7 +576,7 @@ const InvoiceDetail = () => {
                     KRA eTIMS CUIN: <span className="font-medium text-green-600">{invoice.cuin}</span>
                   </p>
                 </div>
-              ) : vatRegistered ? (
+              ) : etimsMode === "oscu" ? (
                 <button
                   onClick={handleSubmitEtims}
                   disabled={etimsSubmitting}
@@ -558,8 +589,22 @@ const InvoiceDetail = () => {
                   )}
                   {etimsSubmitting ? "Submitting to KRA..." : "Submit to eTIMS"}
                 </button>
+              ) : etimsMode === "lite" ? (
+                <button
+                  onClick={() => setRecordEtimsOpen(true)}
+                  className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+                >
+                  <Shield className="h-3 w-3" />
+                  Record eTIMS details
+                </button>
               ) : (
-                <p className="text-xs text-muted-foreground">eTIMS: Not applicable</p>
+                <button
+                  onClick={() => navigate("/settings")}
+                  className="flex items-center gap-1.5 text-xs text-amber-600 hover:underline"
+                >
+                  <Shield className="h-3 w-3" />
+                  eTIMS not set up
+                </button>
               )}
               {invoice.mpesa_reference && (
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -598,6 +643,20 @@ const InvoiceDetail = () => {
           </div>
         </div>
       </div>
+
+      {authBusiness?.id && (
+        <RecordEtimsDialog
+          open={recordEtimsOpen}
+          onOpenChange={setRecordEtimsOpen}
+          invoiceId={invoice.id}
+          invoiceNumber={invoice.invoice_number}
+          businessId={authBusiness.id}
+          customerName={invoice.contacts?.name ?? null}
+          total={invoice.total}
+          vatAmount={invoice.vat_amount ?? null}
+          onSaved={fetchInvoice}
+        />
+      )}
 
       <RecordPaymentDialog
         open={markPaidOpen}

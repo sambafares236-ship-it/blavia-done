@@ -19,6 +19,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
 import { BUSINESS_CATEGORIES } from "@/lib/taxRules";
+import type { EtimsMode } from "@/lib/kraTax";
 import { useNavigate } from "react-router-dom";
 
 const KENYA_COUNTIES = [
@@ -34,11 +35,10 @@ const KENYA_COUNTIES = [
 interface EtimsConfig {
   id?: string;
   kra_pin: string;
-  client_id: string;
-  client_secret: string;
   branch_id: string;
   device_serial: string;
   environment: "sandbox" | "production";
+  mode: EtimsMode;
   status: "pending" | "active" | "error";
   is_active: boolean;
   cmc_key?: string;
@@ -115,9 +115,8 @@ const Settings = () => {
   const [etimsInitializing, setEtimsInitializing] = useState(false);
   const [etimsSaving, setEtimsSaving] = useState(false);
   const [kraPin, setKraPin] = useState("");
-  const [etimsUsername, setEtimsUsername] = useState("");
-  const [etimsPassword, setEtimsPassword] = useState("");
   const [branchId, setBranchId] = useState("00");
+  const [etimsMode, setEtimsMode] = useState<EtimsMode>("none");
   const [deviceSerial, setDeviceSerial] = useState("");
   const [environment, setEnvironment] = useState<"sandbox" | "production">("sandbox");
 
@@ -180,13 +179,13 @@ const Settings = () => {
         error_message: data.error_message ?? undefined,
         is_active: data.is_active ?? false,
         environment: data.environment === "production" ? "production" : "sandbox",
+        mode: (["oscu", "lite"] as const).find((m) => m === data.mode) ?? "none",
         status:
           data.status === "active" || data.status === "error" ? data.status : "pending",
       });
       setKraPin(data.kra_pin || "");
-      setEtimsUsername(data.client_id || "");
-      setEtimsPassword(data.client_secret || "");
       setBranchId(data.branch_id || "00");
+      setEtimsMode((["oscu", "lite"] as const).find((m) => m === data.mode) ?? "none");
       setDeviceSerial(data.device_serial || "");
       setEnvironment(data.environment === "production" ? "production" : "sandbox");
     }
@@ -315,19 +314,28 @@ const Settings = () => {
   // ── Save eTIMS ────────────────────────────────────────────────────────────
   const handleSaveEtims = async () => {
     if (!business?.id) return;
-    if (!kraPin || !etimsUsername || !etimsPassword || !deviceSerial) {
-      toast({ title: "Missing fields", description: "Please fill in all eTIMS fields.", variant: "destructive" });
+    if (!kraPin) {
+      toast({ title: "KRA PIN required", variant: "destructive" });
+      return;
+    }
+    // Only the integrated route needs a device serial — eTIMS Lite users issue
+    // on KRA's own channels and just record the result here.
+    if (etimsMode === "oscu" && !deviceSerial) {
+      toast({
+        title: "Device serial required",
+        description: "Register an OSCU on etims.kra.go.ke to get one, or choose eTIMS Lite.",
+        variant: "destructive",
+      });
       return;
     }
     setEtimsSaving(true);
     const payload = {
       business_id: business.id,
       kra_pin: kraPin.toUpperCase().trim(),
-      client_id: etimsUsername.trim(),
-      client_secret: etimsPassword.trim(),
       branch_id: branchId.trim() || "00",
-      device_serial: deviceSerial.trim(),
+      device_serial: deviceSerial.trim() || null,
       environment,
+      mode: etimsMode,
       status: (etimsConfig?.status || "pending") as "pending" | "active" | "error",
       is_active: true,
     };
@@ -348,13 +356,16 @@ const Settings = () => {
     if (!business?.id || !etimsConfig?.id) return;
     setEtimsInitializing(true);
     try {
+      // etims-auth verifies the caller's session maps to this business before
+      // touching KRA, so the anon key is no longer sufficient here.
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/etims-auth`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            Authorization: `Bearer ${session?.access_token ?? ""}`,
           },
           body: JSON.stringify({ business_id: business.id }),
         }
@@ -596,18 +607,18 @@ const Settings = () => {
               <SectionHeader
                 icon={Shield}
                 title="eTIMS / KRA Compliance"
-                description={`Connect your KRA OSCU device. Register on `}
+                description="Required for every business, whether or not you are VAT registered."
               />
               {etimsConfig && !etimsLoading && (
                 <EtimsStatusBadge status={etimsConfig.status || "pending"} />
               )}
             </div>
             <p className="text-xs text-muted-foreground -mt-4 mb-4 ml-12">
-              Register on{" "}
+              Onboard on{" "}
               <a href="https://etims.kra.go.ke" target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
                 etims.kra.go.ke
               </a>{" "}
-              first to get your credentials.
+              first — KRA issues the device serial there.
             </p>
 
             {etimsLoading ? (
@@ -627,6 +638,25 @@ const Settings = () => {
                     {new Date(etimsConfig.last_initialized_at).toLocaleDateString("en-KE", { day: "numeric", month: "long", year: "numeric" })}.
                   </div>
                 )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="etims_mode">How do you issue eTIMS invoices?</Label>
+                  <Select value={etimsMode} onValueChange={(v) => setEtimsMode(v as EtimsMode)}>
+                    <SelectTrigger id="etims_mode"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not set up yet</SelectItem>
+                      <SelectItem value="oscu">Integrated — Blavia submits to KRA</SelectItem>
+                      <SelectItem value="lite">eTIMS Lite — I issue on KRA, record here</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {etimsMode === "oscu"
+                      ? "Needs an OSCU device serial from KRA. Invoices are sent automatically and the CUIN comes back here."
+                      : etimsMode === "lite"
+                        ? "Issue each invoice on the KRA portal or *222#, then record its CUIN against the invoice in Blavia."
+                        : "Choose a route to start reporting invoices to KRA."}
+                  </p>
+                </div>
+
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label htmlFor="kra_pin">KRA PIN</Label>
@@ -637,18 +667,13 @@ const Settings = () => {
                     <Input id="branch_id" value={branchId} onChange={(e) => setBranchId(e.target.value)} placeholder="00" className="font-mono" />
                     <p className="text-xs text-muted-foreground">Use 00 for main branch</p>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="device_serial">Device Serial Number</Label>
-                    <Input id="device_serial" value={deviceSerial} onChange={(e) => setDeviceSerial(e.target.value)} placeholder="From KRA after OSCU registration" className="font-mono" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="etims_username">eTIMS Username</Label>
-                    <Input id="etims_username" value={etimsUsername} onChange={(e) => setEtimsUsername(e.target.value)} placeholder="Your eTIMS portal username" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="etims_password">eTIMS Password</Label>
-                    <Input id="etims_password" type="password" value={etimsPassword} onChange={(e) => setEtimsPassword(e.target.value)} placeholder="Your eTIMS portal password" />
-                  </div>
+                  {etimsMode === "oscu" && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="device_serial">Device Serial Number</Label>
+                      <Input id="device_serial" value={deviceSerial} onChange={(e) => setDeviceSerial(e.target.value)} placeholder="From KRA after OSCU registration" className="font-mono" />
+                      <p className="text-xs text-muted-foreground">Issued by KRA once you register an OSCU</p>
+                    </div>
+                  )}
                   <div className="space-y-1.5">
                     <Label htmlFor="environment">Environment</Label>
                     <Select value={environment} onValueChange={(v) => setEnvironment(v as "sandbox" | "production")}>
@@ -665,13 +690,20 @@ const Settings = () => {
                     {etimsSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                     {etimsSaving ? "Saving…" : "Save Credentials"}
                   </Button>
-                  <Button onClick={handleInitialize} disabled={etimsInitializing || !etimsConfig?.id} size="sm" className="gap-2">
-                    {etimsInitializing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                    {etimsInitializing ? "Connecting to KRA…" : etimsConfig?.status === "active" ? "Re-initialize" : "Initialize with KRA"}
-                  </Button>
+                  {etimsMode === "oscu" && (
+                    <Button onClick={handleInitialize} disabled={etimsInitializing || !etimsConfig?.id} size="sm" className="gap-2">
+                      {etimsInitializing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      {etimsInitializing ? "Connecting to KRA…" : etimsConfig?.status === "active" ? "Re-initialize" : "Initialize with KRA"}
+                    </Button>
+                  )}
                 </div>
-                {!etimsConfig?.id && (
-                  <p className="text-xs text-muted-foreground">Save your credentials first, then click Initialize.</p>
+                {etimsMode === "oscu" && !etimsConfig?.id && (
+                  <p className="text-xs text-muted-foreground">Save your details first, then click Initialize.</p>
+                )}
+                {etimsMode === "lite" && (
+                  <p className="text-xs text-muted-foreground">
+                    No initialization needed. Open any invoice and use “Record eTIMS details” after issuing it on KRA.
+                  </p>
                 )}
               </div>
             )}

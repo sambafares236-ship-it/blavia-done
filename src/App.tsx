@@ -19,7 +19,6 @@ import Tax from "./pages/Tax.tsx";
 import BalanceSheet from "./pages/BalanceSheet.tsx";
 import ScheduledExpenses from "./pages/ScheduledExpenses.tsx";
 import Settings from "./pages/Settings.tsx";
-import EtimsSettings from "./pages/EtimsSettings.tsx";
 import MpesaSettings from "./pages/MpesaSettings.tsx";
 import Invoices from "./pages/Invoices.tsx";
 import Receivables from "./pages/Receivables.tsx";
@@ -57,7 +56,6 @@ const App = () => (
             <Route path="/balance-sheet" element={<ProtectedRoute><BalanceSheet /></ProtectedRoute>} />
             <Route path="/scheduled-expenses" element={<ProtectedRoute><ScheduledExpenses /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-            <Route path="/etims-settings" element={<ProtectedRoute><EtimsSettings /></ProtectedRoute>} />
             <Route path="/mpesa-settings" element={<ProtectedRoute><MpesaSettings /></ProtectedRoute>} />
 
             {/* Invoice Routes */}
@@ -69,6 +67,9 @@ const App = () => (
 
             {/* Legacy redirects */}
             <Route path="/dashboard" element={<Navigate to="/home" replace />} />
+            {/* eTIMS setup lives in Settings; the standalone page keyed config by
+                auth user id instead of business id and wrote orphaned rows. */}
+            <Route path="/etims-settings" element={<Navigate to="/settings" replace />} />
             <Route path="/transactions" element={<Navigate to="/payments" replace />} />
             <Route path="/employees" element={<Navigate to="/payroll?tab=employees" replace />} />
             <Route path="/payslips" element={<Navigate to="/payroll?tab=payslips" replace />} />

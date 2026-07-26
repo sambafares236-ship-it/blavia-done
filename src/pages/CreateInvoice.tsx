@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/use-toast";
+import {
+  VAT_RATE, codesForBusiness, defaultCodeFor, rateForCode, KRA_TAX_TYPES,
+} from "@/lib/kraTax";
 import { Plus, Trash2, ArrowLeft, Save, Send, User, Check } from "lucide-react";
 
 interface LineItem {
@@ -26,14 +29,18 @@ interface Contact {
   phone: string;
 }
 
-const VAT_RATE = 0.16;
-
+/**
+ * Amounts are entered VAT-inclusive. Any code carrying a zero rate — exempt,
+ * zero-rated, or the non-VAT code a business that isn't VAT-registered uses —
+ * leaves the price untouched and books no tax.
+ */
 const calcItem = (item: LineItem): LineItem => {
   const total = parseFloat((item.amount_incl * item.quantity).toFixed(2));
-  const vat_amount = item.tax_code === "A"
+  const taxed = rateForCode(item.tax_code) > 0;
+  const vat_amount = taxed
     ? parseFloat((total - total / (1 + VAT_RATE)).toFixed(2))
     : 0;
-  const unit_price = item.tax_code === "A"
+  const unit_price = taxed
     ? parseFloat((item.amount_incl / (1 + VAT_RATE)).toFixed(2))
     : parseFloat(item.amount_incl.toFixed(2));
   return { ...item, total, vat_amount, unit_price };
@@ -41,7 +48,7 @@ const calcItem = (item: LineItem): LineItem => {
 
 const defaultItem = (vatRegistered: boolean): LineItem => calcItem({
   description: "", quantity: 1, amount_incl: 0,
-  tax_code: vatRegistered ? "A" : "B",
+  tax_code: defaultCodeFor(vatRegistered),
   vat_amount: 0, unit_price: 0, total: 0,
 });
 
@@ -59,6 +66,7 @@ const CreateInvoice = () => {
   const { user, business } = useAuth();
   const navigate = useNavigate();
   const vatRegistered = business?.vat_registered ?? false;
+  const taxOptions = codesForBusiness(vatRegistered);
 
   const [businessId, setBusinessId] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -279,6 +287,8 @@ const CreateInvoice = () => {
           subtotal: parseFloat(subtotal.toFixed(2)),
           vat_amount: parseFloat(totalVat.toFixed(2)),
           total: parseFloat(grandTotal.toFixed(2)),
+          // Explicit so etims-send-invoice never falls back to assuming 16%.
+          vat_rate: vatRegistered ? KRA_TAX_TYPES.standard.rate : 0,
           notes: notes || null,
           payment_method: paymentMethod,
           customer_email: hasEmail ? clientEmail.trim() : null,
@@ -508,15 +518,16 @@ const CreateInvoice = () => {
                       onChange={(e) => updateItem(index, "amount_incl", parseFloat(e.target.value) || 0)}
                     />
                   </div>
-                  {vatRegistered && (
+                  {taxOptions.length > 1 && (
                     <div className="col-span-5 md:col-span-2">
                       <select
                         className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                         value={item.tax_code}
                         onChange={(e) => updateItem(index, "tax_code", e.target.value)}
                       >
-                        <option value="A">VAT 16%</option>
-                        <option value="B">Exempt</option>
+                        {taxOptions.map((t) => (
+                          <option key={t.code} value={t.code}>{t.label}</option>
+                        ))}
                       </select>
                     </div>
                   )}
@@ -530,7 +541,7 @@ const CreateInvoice = () => {
                     </button>
                   </div>
                 </div>
-                {vatRegistered && item.tax_code === "A" && item.amount_incl > 0 && (
+                {rateForCode(item.tax_code) > 0 && item.amount_incl > 0 && (
                   <p className="text-xs text-muted-foreground pl-1">
                     Excl. VAT: {fmt(item.unit_price * item.quantity)} · VAT: {fmt(item.vat_amount)} · Total: {fmt(item.total)}
                   </p>
@@ -538,6 +549,13 @@ const CreateInvoice = () => {
               </div>
             ))}
           </div>
+
+          {!vatRegistered && (
+            <p className="rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              Not VAT registered — no VAT is charged on these lines. This invoice
+              still has to be reported to KRA through eTIMS.
+            </p>
+          )}
 
           <button onClick={addItem} className="flex items-center gap-2 text-sm text-primary hover:underline">
             <Plus className="h-4 w-4" />Add line item

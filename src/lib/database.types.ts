@@ -713,8 +713,8 @@ export type Database = {
         Row: {
           branch_id: string | null
           business_id: string | null
-          client_id: string
-          client_secret: string
+          client_id: string | null
+          client_secret: string | null
           cmc_key: string | null
           created_at: string | null
           device_serial: string | null
@@ -724,14 +724,15 @@ export type Database = {
           is_active: boolean | null
           kra_pin: string
           last_initialized_at: string | null
+          mode: string
           status: string
           updated_at: string | null
         }
         Insert: {
           branch_id?: string | null
           business_id?: string | null
-          client_id: string
-          client_secret: string
+          client_id?: string | null
+          client_secret?: string | null
           cmc_key?: string | null
           created_at?: string | null
           device_serial?: string | null
@@ -741,14 +742,15 @@ export type Database = {
           is_active?: boolean | null
           kra_pin: string
           last_initialized_at?: string | null
+          mode?: string
           status?: string
           updated_at?: string | null
         }
         Update: {
           branch_id?: string | null
           business_id?: string | null
-          client_id?: string
-          client_secret?: string
+          client_id?: string | null
+          client_secret?: string | null
           cmc_key?: string | null
           created_at?: string | null
           device_serial?: string | null
@@ -758,6 +760,7 @@ export type Database = {
           is_active?: boolean | null
           kra_pin?: string
           last_initialized_at?: string | null
+          mode?: string
           status?: string
           updated_at?: string | null
         }

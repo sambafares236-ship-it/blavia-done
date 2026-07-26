@@ -22,10 +22,40 @@ serve(async (req) => {
       });
     }
 
+    // This endpoint runs with the service-role key and previously acted on any
+    // business_id posted to it, with no check that the caller had anything to
+    // do with that business. Combined with returning the CMC key below, that
+    // let anyone holding the public anon key retrieve another business's KRA
+    // credentials. Verify the caller's session maps to the requested business
+    // before doing anything.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const callerToken = authHeader.replace(/^Bearer\s+/i, "");
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+
+    const { data: caller } = await supabase.auth.getUser(callerToken);
+    if (!caller?.user) {
+      return new Response(JSON.stringify({ error: "Not authenticated" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: callerProfile } = await supabase
+      .from("profiles")
+      .select("business_id")
+      .eq("id", caller.user.id)
+      .maybeSingle();
+
+    if (!callerProfile || callerProfile.business_id !== business_id) {
+      return new Response(JSON.stringify({ error: "Not authorised for this business" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Fetch tenant eTIMS config
     const { data: config, error } = await supabase
@@ -43,17 +73,10 @@ serve(async (req) => {
 
     // If already initialized and CMC key exists, return it
     if (config.cmc_key && config.status === "active") {
+      // Deliberately does not echo kra_pin / cmc_key — the client only needs
+      // to know the handshake is done.
       return new Response(
-        JSON.stringify({
-          success: true,
-          already_initialized: true,
-          kra_pin: config.kra_pin,
-          branch_id: config.branch_id,
-          cmc_key: config.cmc_key,
-          base_url: config.environment === "production"
-            ? "https://etims.kra.go.ke/etims-api"
-            : "https://etims-sbx.kra.go.ke/etims-api",
-        }),
+        JSON.stringify({ success: true, already_initialized: true }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -128,15 +151,7 @@ serve(async (req) => {
       .eq("business_id", business_id);
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        already_initialized: false,
-        kra_pin: config.kra_pin,
-        branch_id: config.branch_id,
-        cmc_key: cmcKey,
-        base_url: baseUrl,
-        kra_response: kraData,
-      }),
+      JSON.stringify({ success: true, already_initialized: false }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 

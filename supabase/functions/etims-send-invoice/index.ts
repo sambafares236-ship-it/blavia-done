@@ -1,6 +1,7 @@
 // supabase/functions/etims-send-invoice/index.ts
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { KRA_BANDS, bandForCode, rateForCode, type KraBand } from "../_shared/kraTax.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -53,7 +54,7 @@ serve(async (req) => {
       .from("invoices")
       .select(`
         *,
-        contacts(id, name, email, phone),
+        contacts(id, name, email, phone, kra_pin),
         invoice_items(*)
       `)
       .eq("id", invoice_id)
@@ -100,12 +101,39 @@ serve(async (req) => {
       credit: "05",
     };
 
+    // Aggregate each band from the line items rather than assuming everything
+    // is standard-rated. The previous version put the whole subtotal into
+    // taxblAmtA at 16% regardless of the codes on the lines, which misreported
+    // exempt lines on mixed invoices and made a non-VAT invoice incoherent —
+    // a 16% band carrying zero tax.
+    const bandTotals: Record<KraBand, { taxbl: number; tax: number }> =
+      Object.fromEntries(KRA_BANDS.map((b) => [b, { taxbl: 0, tax: 0 }])) as Record<
+        KraBand,
+        { taxbl: number; tax: number }
+      >;
+
+    for (const item of invoice.invoice_items ?? []) {
+      const band = bandForCode(item.tax_code);
+      const lineTotal = Number(item.total) || 0;
+      const lineTax = Number(item.vat_amount) || 0;
+      bandTotals[band].taxbl += lineTotal - lineTax;
+      bandTotals[band].tax += lineTax;
+    }
+
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const totTaxblAmt = round2(
+      KRA_BANDS.reduce((s, b) => s + bandTotals[b].taxbl, 0),
+    );
+    const totTaxAmt = round2(KRA_BANDS.reduce((s, b) => s + bandTotals[b].tax, 0));
+
     const kraInvoice = {
       tin: config.kra_pin,
       bhfId: config.branch_id || "00",
       orgInvcNo: 0,
       cisInvcNo: invoice.invoice_number,
-      custTin: null, // customer KRA PIN � null if B2C
+      // Buyer's KRA PIN. Captured on the contact and required for the buyer to
+      // claim the expense; null for genuine walk-in B2C sales.
+      custTin: invoice.contacts?.kra_pin || null,
       custNm: invoice.contacts?.name || "Retail Customer",
       rcptTyCd: "S",   // S = Sale
       pmtTyCd: pmtCodeMap[invoice.payment_method] || "01",
@@ -118,20 +146,20 @@ serve(async (req) => {
       rfdDt: null,
       rfdRsnCd: null,
       totItemCnt: invoice.invoice_items?.length || 0,
-      taxblAmtA: invoice.subtotal,   // 16% VAT taxable amount
-      taxblAmtB: 0,
-      taxblAmtC: 0,
-      taxblAmtD: 0,
-      taxRtA: invoice.vat_rate || 16,
-      taxRtB: 0,
-      taxRtC: 0,
-      taxRtD: 0,
-      taxAmtA: invoice.vat_amount,
-      taxAmtB: 0,
-      taxAmtC: 0,
-      taxAmtD: 0,
-      totTaxblAmt: invoice.subtotal,
-      totTaxAmt: invoice.vat_amount,
+      taxblAmtA: round2(bandTotals.A.taxbl),
+      taxblAmtB: round2(bandTotals.B.taxbl),
+      taxblAmtC: round2(bandTotals.C.taxbl),
+      taxblAmtD: round2(bandTotals.D.taxbl),
+      taxRtA: rateForCode("A"),
+      taxRtB: rateForCode("B"),
+      taxRtC: rateForCode("C"),
+      taxRtD: rateForCode("D"),
+      taxAmtA: round2(bandTotals.A.tax),
+      taxAmtB: round2(bandTotals.B.tax),
+      taxAmtC: round2(bandTotals.C.tax),
+      taxAmtD: round2(bandTotals.D.tax),
+      totTaxblAmt,
+      totTaxAmt,
       totAmt: invoice.total,
       prchrAcptcYn: "N",
       remark: invoice.notes || null,
@@ -164,7 +192,7 @@ serve(async (req) => {
           isrccNm: null,
           isrcRt: 0,
           isrcAmt: 0,
-          taxTyCd: item.tax_code || "A", // A = 16% VAT
+          taxTyCd: bandForCode(item.tax_code),
           taxblAmt: taxable,
           taxAmt: taxAmt,
           totAmt: total,
@@ -218,7 +246,7 @@ serve(async (req) => {
       });
 
       // 7. Update the invoice record with KRA data
-      await supabase
+      const { error: invUpdErr } = await supabase
         .from("invoices")
         .update({
           etims_status: success ? "submitted" : "failed",
@@ -228,6 +256,12 @@ serve(async (req) => {
           updated_at: new Date().toISOString(),
         })
         .eq("id", invoice_id);
+
+      // Silently losing this write would leave a KRA-accepted invoice looking
+      // unsubmitted, and the failure poller would never see it either.
+      if (invUpdErr) {
+        console.error("etims-send-invoice: invoice status write failed:", invUpdErr);
+      }
 
       if (!success) {
         return new Response(

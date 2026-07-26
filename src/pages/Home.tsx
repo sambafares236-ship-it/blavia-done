@@ -338,14 +338,15 @@ const Home = () => {
                 label="eTIMS"
                 value={etimsLabel}
                 tone={etimsTone}
-                fix={{ label: "Set up", to: "/etims-settings" }}
+                fix={{ label: "Set up", to: "/settings" }}
                 loading={loading}
               />
+              {/* Not being VAT registered is lawful, not a compliance gap — it
+                  is reported without the warning tone. eTIMS above applies either way. */}
               <StatusRow
                 label="VAT registration"
                 value={business?.vat_registered ? "Registered" : "Not registered"}
-                tone={business?.vat_registered ? "ok" : "missing"}
-                fix={{ label: "Update", to: "/settings" }}
+                tone="ok"
                 loading={loading}
               />
               <StatusRow
