@@ -8,7 +8,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Landing from "./pages/Landing.tsx";
 import Login from "./pages/Login.tsx";
 import Signup from "./pages/Signup.tsx";
-import Index from "./pages/Index.tsx";
+import Home from "./pages/Home.tsx";
 import Onboarding from "./pages/Onboarding.tsx";
 import ExecutiveDashboard from "./pages/ExecutiveDashboard.tsx";
 import Analytics from "./pages/Analytics.tsx";
@@ -47,7 +47,7 @@ const App = () => (
 
             {/* Protected */}
             <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
-            <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+            <Route path="/home" element={<ProtectedRoute><Home /></ProtectedRoute>} />
             <Route path="/executive" element={<ProtectedRoute><ExecutiveDashboard /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/payments" element={<ProtectedRoute><Payments /></ProtectedRoute>} />
@@ -68,6 +68,7 @@ const App = () => (
             <Route path="/payables" element={<ProtectedRoute><Payables /></ProtectedRoute>} />
 
             {/* Legacy redirects */}
+            <Route path="/dashboard" element={<Navigate to="/home" replace />} />
             <Route path="/transactions" element={<Navigate to="/payments" replace />} />
             <Route path="/employees" element={<Navigate to="/payroll?tab=employees" replace />} />
             <Route path="/payslips" element={<Navigate to="/payroll?tab=payslips" replace />} />

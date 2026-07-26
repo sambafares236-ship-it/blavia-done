@@ -60,7 +60,7 @@ async function buildNotifications(businessId: string): Promise<Notif[]> {
       icon: ClipboardList,
       title: `${pending.length} transaction${pending.length > 1 ? "s" : ""} pending review`,
       body: "Review and approve to keep your records accurate.",
-      link: "/dashboard#transactions",
+      link: "/payments",
     });
   }
 

@@ -17,7 +17,7 @@ const Login = () => {
   const { user, loading } = useAuth();
   const from =
     (location.state as { from?: { pathname: string } })?.from?.pathname ??
-    "/dashboard";
+    "/home";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,7 +28,7 @@ const Login = () => {
   const [sendingReset, setSendingReset] = useState(false);
 
   if (!loading && user) {
-    return <Navigate to={from === "/" ? "/dashboard" : from} replace />;
+    return <Navigate to={from === "/" ? "/home" : from} replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -46,7 +46,7 @@ const Login = () => {
         return;
       }
       toast({ title: "Welcome back!" });
-      navigate(from === "/" ? "/dashboard" : from, { replace: true });
+      navigate(from === "/" ? "/home" : from, { replace: true });
     } catch (err) {
       console.error("Login exception:", err);
       toast({

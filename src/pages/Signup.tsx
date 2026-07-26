@@ -15,7 +15,7 @@ const Signup = () => {
   const { user, loading } = useAuth();
 
   if (!loading && user) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/home" replace />;
   }
 
   const [fullName, setFullName] = useState("");
@@ -36,7 +36,7 @@ const Signup = () => {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/dashboard`,
+        emailRedirectTo: `${window.location.origin}/home`,
         data: {
           full_name: fullName,
           company_name: companyName,

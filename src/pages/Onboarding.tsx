@@ -35,7 +35,7 @@ const Onboarding = () => {
     if (!business) return;
     // Already completed onboarding (e.g. user navigated back here manually) — move on.
     if (business.business_category) {
-      navigate("/dashboard", { replace: true });
+      navigate("/home", { replace: true });
       return;
     }
     setBusinessName(business.business_name ?? "");
@@ -72,7 +72,7 @@ const Onboarding = () => {
 
     await refreshProfile();
     toast({ title: `Welcome to BLAVIA, ${profile?.full_name?.split(" ")[0] ?? "there"}!` });
-    navigate("/dashboard", { replace: true });
+    navigate("/home", { replace: true });
   };
 
   return (
