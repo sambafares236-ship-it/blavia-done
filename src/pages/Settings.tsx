@@ -345,7 +345,15 @@ const Settings = () => {
     if (error) {
       toast({ title: "Failed to save eTIMS credentials", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "eTIMS credentials saved", description: "Now click Initialize to connect to KRA." });
+      toast({
+        title: "eTIMS details saved",
+        description:
+          etimsMode === "oscu"
+            ? "Now click Initialize to connect to KRA."
+            : etimsMode === "lite"
+              ? "Record each invoice's CUIN from the invoice page after issuing it on KRA."
+              : "Choose how you issue eTIMS invoices to start reporting to KRA.",
+      });
       fetchEtimsConfig();
     }
     setEtimsSaving(false);
@@ -630,6 +638,13 @@ const Settings = () => {
                 {etimsConfig?.error_message && (
                   <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     <strong>KRA Error:</strong> {etimsConfig.error_message}
+                  </div>
+                )}
+                {environment === "sandbox" && etimsMode !== "none" && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <strong>Sandbox — not live filing.</strong> Invoices go to KRA's test
+                    environment and return a CUIN, but nothing is reported for real. Switch
+                    Environment to Production once you have finished testing.
                   </div>
                 )}
                 {etimsConfig?.status === "active" && etimsConfig?.last_initialized_at && (

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2, Circle, FileText, Smartphone, Users, X } from "lucide-react";
+import { CheckCircle2, Circle, FileText, Shield, Smartphone, Users, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -22,6 +22,7 @@ export const OnboardingChecklist = () => {
   const [hasEmployee, setHasEmployee] = useState(false);
   const [hasInvoice, setHasInvoice] = useState(false);
   const [hasMpesa, setHasMpesa] = useState(false);
+  const [hasEtims, setHasEtims] = useState(false);
   const [dismissed, setDismissed] = useState(true); // starts true to avoid a flash before localStorage is checked
 
   useEffect(() => {
@@ -30,14 +31,18 @@ export const OnboardingChecklist = () => {
 
     const load = async () => {
       setLoading(true);
-      const [empRes, invRes, mpesaRes] = await Promise.all([
+      const [empRes, invRes, mpesaRes, etimsRes] = await Promise.all([
         supabase.from("employees").select("id", { count: "exact", head: true }).eq("business_id", business.id).eq("status", "active"),
         supabase.from("invoices").select("id", { count: "exact", head: true }).eq("business_id", business.id),
         supabase.from("mpesa_configs").select("id", { count: "exact", head: true }).eq("business_id", business.id).eq("is_active", true),
+        supabase.from("etims_configs").select("mode").eq("business_id", business.id).maybeSingle(),
       ]);
       setHasEmployee((empRes.count ?? 0) > 0);
       setHasInvoice((invRes.count ?? 0) > 0);
       setHasMpesa((mpesaRes.count ?? 0) > 0);
+      // Either route counts as enrolled — a Lite business is compliant without
+      // ever completing the OSCU handshake.
+      setHasEtims(etimsRes.data?.mode === "oscu" || etimsRes.data?.mode === "lite");
       setLoading(false);
     };
     load();
@@ -52,6 +57,9 @@ export const OnboardingChecklist = () => {
   if (loading || dismissed || !business) return null;
 
   const items: ChecklistItem[] = [
+    // First: eTIMS is a legal obligation for every business carrying on a
+    // trade, VAT-registered or not, and nothing else in the product prompts it.
+    { key: "etims", label: "Set up eTIMS for KRA", href: "/settings", icon: Shield, done: hasEtims },
     { key: "invoice", label: "Send your first invoice", href: "/invoices/new", icon: FileText, done: hasInvoice },
     { key: "employee", label: "Add your first employee", href: "/payroll?tab=employees", icon: Users, done: hasEmployee },
     { key: "mpesa", label: "Connect M-Pesa for payments", href: "/mpesa-settings", icon: Smartphone, done: hasMpesa },
@@ -71,7 +79,7 @@ export const OnboardingChecklist = () => {
           <X className="h-4 w-4" />
         </button>
       </div>
-      <ul className="mt-4 grid gap-2 sm:grid-cols-3">
+      <ul className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {items.map((item) => {
           const Icon = item.done ? CheckCircle2 : Circle;
           const body = (

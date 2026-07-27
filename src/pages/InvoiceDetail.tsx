@@ -74,6 +74,7 @@ const InvoiceDetail = () => {
   // whether this system submits the invoice or the business issues it on KRA's
   // own channels and records the CUIN back here.
   const [etimsMode, setEtimsMode] = useState<EtimsMode>("none");
+  const [etimsSandbox, setEtimsSandbox] = useState(false);
   const [recordEtimsOpen, setRecordEtimsOpen] = useState(false);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [items, setItems] = useState<InvoiceItem[]>([]);
@@ -86,11 +87,12 @@ const InvoiceDetail = () => {
     if (!authBusiness?.id) return;
     supabase
       .from("etims_configs")
-      .select("mode")
+      .select("mode, environment")
       .eq("business_id", authBusiness.id)
       .maybeSingle()
       .then(({ data }) => {
         setEtimsMode((["oscu", "lite"] as const).find((m) => m === data?.mode) ?? "none");
+        setEtimsSandbox(data?.environment !== "production");
       });
   }, [authBusiness?.id]);
 
@@ -571,10 +573,15 @@ const InvoiceDetail = () => {
           <div className="bg-muted/30 px-6 py-4 flex items-center justify-between border-t">
             <div>
               {invoice.cuin ? (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <p className="text-xs text-muted-foreground">
                     KRA eTIMS CUIN: <span className="font-medium text-green-600">{invoice.cuin}</span>
                   </p>
+                  {etimsMode === "oscu" && etimsSandbox && (
+                    <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                      Sandbox — not a live filing
+                    </span>
+                  )}
                 </div>
               ) : etimsMode === "oscu" ? (
                 <button
