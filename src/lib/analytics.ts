@@ -8,6 +8,7 @@ import {
   isBefore,
   parseISO,
   startOfMonth,
+  startOfYear,
   subMonths,
 } from "date-fns";
 
@@ -55,6 +56,47 @@ export function buildDailySeries(
     point.net = point.income - point.expenses;
   }
   return [...map.values()];
+}
+
+// ----------- Monthly series (for Revenue vs Expenses / Monthly P&L) -----------
+export type MonthlyPoint = {
+  month: string; // "yyyy-MM"
+  label: string; // "Jan 2026"
+  income: number;
+  expenses: number;
+  net: number;
+};
+
+export function buildMonthlySeries(rows: Transaction[], months = 6): MonthlyPoint[] {
+  const now = new Date();
+  const points: MonthlyPoint[] = [];
+  const map = new Map<string, MonthlyPoint>();
+  for (let i = months - 1; i >= 0; i--) {
+    const d = startOfMonth(subMonths(now, i));
+    const key = format(d, "yyyy-MM");
+    const point: MonthlyPoint = { month: key, label: format(d, "MMM yyyy"), income: 0, expenses: 0, net: 0 };
+    map.set(key, point);
+    points.push(point);
+  }
+  for (const t of onlyApproved(rows)) {
+    const key = t.txn_date?.slice(0, 7);
+    const point = map.get(key);
+    if (!point) continue;
+    const amt = Math.abs(Number(t.amount) || 0);
+    if (isIncome(t)) point.income += amt;
+    else if (isExpense(t)) point.expenses += amt;
+    point.net = point.income - point.expenses;
+  }
+  return points;
+}
+
+/** Net profit (income - expenses) from the start of the current calendar year to today. */
+export function ytdNetProfit(rows: Transaction[]): number {
+  const yearStart = startOfYear(new Date());
+  const approved = onlyApproved(rows).filter((t) => !isBefore(txnDate(t), yearStart));
+  const inc = approved.filter(isIncome).reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
+  const exp = approved.filter(isExpense).reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
+  return inc - exp;
 }
 
 // ----------- Forecasting -----------

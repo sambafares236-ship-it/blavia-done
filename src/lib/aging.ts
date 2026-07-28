@@ -21,3 +21,13 @@ export const BUCKET_META: Record<Bucket, { label: string; color: string }> = {
 };
 
 export const BUCKET_ORDER: Bucket[] = ["overdue_60_plus", "overdue_31_60", "overdue_1_30", "due_soon", "not_due", "no_due_date"];
+
+/** Hex fills for chart bars/cells (Tailwind classes in BUCKET_META don't work as SVG fill props). */
+export const BUCKET_CHART_COLOR: Record<Bucket, string> = {
+  not_due: "hsl(213 52% 25%)",
+  due_soon: "hsl(38 92% 50%)",
+  overdue_1_30: "hsl(0 72% 65%)",
+  overdue_31_60: "hsl(0 72% 51%)",
+  overdue_60_plus: "hsl(0 72% 35%)",
+  no_due_date: "hsl(214 15% 65%)",
+};
