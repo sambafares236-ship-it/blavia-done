@@ -85,7 +85,6 @@ const CreateInvoice = () => {
   // Invoice fields
   const [dueDate, setDueDate] = useState(todayStr());
   const [notes, setNotes] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("mpesa");
   const [items, setItems] = useState<LineItem[]>([defaultItem(vatRegistered)]);
 
   const phoneRef = useRef<HTMLDivElement>(null);
@@ -270,9 +269,8 @@ const CreateInvoice = () => {
         p_business_id: businessId,
       });
 
-      // "Sent" now means an email actually went out — no more auto-firing an
-      // STK push on save. Phone is still captured for records and for the
-      // manual "Request Payment" STK trigger on the invoice detail page.
+      // "Sent" now means an email actually went out. Phone is still captured
+      // for records, but no payment method or STK trigger lives on the invoice.
       const willSend = sendAfter && hasEmail;
 
       const { data: invoice, error: invError } = await supabase
@@ -290,7 +288,6 @@ const CreateInvoice = () => {
           // Explicit so etims-send-invoice never falls back to assuming 16%.
           vat_rate: vatRegistered ? KRA_TAX_TYPES.standard.rate : 0,
           notes: notes || null,
-          payment_method: paymentMethod,
           customer_email: hasEmail ? clientEmail.trim() : null,
           customer_phone: hasPhone ? clientPhone : null,
           sent_at: willSend ? new Date().toISOString() : null,
@@ -456,27 +453,14 @@ const CreateInvoice = () => {
         {/* Invoice Details */}
         <div className="rounded-xl border bg-card p-6 space-y-4">
           <h2 className="font-semibold text-base">Details</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Due Date</Label>
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Payment Method</Label>
-              <select
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-              >
-                <option value="mpesa">M-Pesa</option>
-                <option value="bank">Bank Transfer</option>
-                <option value="cash">Cash</option>
-                <option value="cheque">Cheque</option>
-              </select>
-            </div>
-            <div className="space-y-1.5">
               <Label>Notes</Label>
-              <Input placeholder="Payment terms, reference..." value={notes} onChange={(e) => setNotes(e.target.value)} />
+              <Input placeholder="Reference, terms..." value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
           </div>
         </div>

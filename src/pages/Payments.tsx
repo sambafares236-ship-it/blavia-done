@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, FileText, Plus, Search, Smartphone } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, FileText, Plus, Search } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,7 +11,6 @@ import {
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { RecordPaymentDialog } from "@/components/payments/RecordPaymentDialog";
 import { UnmatchedPaymentsSection } from "@/components/payments/UnmatchedPaymentsSection";
-import { RequestStkPaymentDialog } from "@/components/payments/RequestStkPaymentDialog";
 import { supabase, Transaction } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
 import { downloadCsv, printTableAsPdf } from "@/lib/exporters";
@@ -63,7 +62,6 @@ const Payments = () => {
   const [customFrom, setCustomFrom] = useState(firstOfMonth());
   const [customTo, setCustomTo] = useState(todayStr());
   const [recordOpen, setRecordOpen] = useState(false);
-  const [stkOpen, setStkOpen] = useState(false);
 
   const loadTxns = async () => {
     if (!profile?.business_id) return;
@@ -150,10 +148,6 @@ const Payments = () => {
             <Button size="sm" onClick={() => setRecordOpen(true)}
               className="gap-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90">
               <Plus className="h-4 w-4" /> Record Payment
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setStkOpen(true)}
-              className="gap-2 rounded-lg border-green-300 text-green-700 hover:bg-green-50">
-              <Smartphone className="h-4 w-4" /> Request Payment (STK Push)
             </Button>
             <Button variant="outline" size="sm" onClick={onCsv} className="gap-2 rounded-lg">
               <Download className="h-4 w-4" /> CSV
@@ -381,15 +375,6 @@ const Payments = () => {
           onOpenChange={setRecordOpen}
           businessId={profile.business_id}
           onRecorded={loadTxns}
-        />
-      )}
-
-      {profile?.business_id && (
-        <RequestStkPaymentDialog
-          open={stkOpen}
-          onOpenChange={setStkOpen}
-          businessId={profile.business_id}
-          onCompleted={loadTxns}
         />
       )}
     </AppShell>

@@ -17,6 +17,7 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   employeeFormSchema,
+  normalizeKenyanPhone,
   type Employee,
   type EmployeeFormValues,
 } from "@/lib/employees";
@@ -60,7 +61,7 @@ function LineItemEditor({ title, items, onChange }: {
       )}
       <div className="flex gap-2">
         <Input className="flex-1"
-          placeholder={title === "Allowances" ? "e.g. Housing allowance" : "e.g. PAYE tax"}
+          placeholder={title === "Allowances" ? "e.g. Housing allowance" : "e.g. Company welfare"}
           value={label} onChange={(e) => setLabel(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())} />
         <Input className="w-32" type="number" placeholder="Amount"
@@ -146,16 +147,12 @@ export const EmployeeFormDialog = ({ open, onOpenChange, employee, onSaved }: Pr
   }, [open, defaults, reset, employee]);
 
   const paymentMethod = watch("payment_method");
-  const basicSalary = Number(watch("basic_salary") || 0);
-  const totalAllowances = allowances.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-  const totalDeductions = deductions.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-  const netPay = basicSalary + totalAllowances - totalDeductions;
 
   const onSubmit = handleSubmit(async (parsed) => {
     const payload = {
       full_name: parsed.full_name,
       email: parsed.email || null,
-      phone: parsed.phone,
+      phone: normalizeKenyanPhone(parsed.phone),
       id_number: parsed.id_number || null,
       kra_pin: parsed.kra_pin || null,
       nssf_number: parsed.nssf_number || null,
@@ -164,7 +161,7 @@ export const EmployeeFormDialog = ({ open, onOpenChange, employee, onSaved }: Pr
       allowances: toRecord(allowances),
       deductions: toRecord(deductions),
       payment_method: parsed.payment_method,
-      mpesa_number: parsed.mpesa_number || null,
+      mpesa_number: parsed.mpesa_number ? normalizeKenyanPhone(parsed.mpesa_number) : null,
       bank_account: parsed.bank_account || null,
       department: parsed.department || null,
       position: parsed.position || null,
@@ -222,7 +219,7 @@ export const EmployeeFormDialog = ({ open, onOpenChange, employee, onSaved }: Pr
                   <Input type="email" placeholder="jane@company.com" {...register("email")} />
                 </Field>
                 <Field label="Phone" required error={errors.phone?.message}>
-                  <Input placeholder="+254712345678" {...register("phone")} />
+                  <Input placeholder="0700920985" {...register("phone")} />
                 </Field>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -255,30 +252,6 @@ export const EmployeeFormDialog = ({ open, onOpenChange, employee, onSaved }: Pr
               </Field>
               <LineItemEditor title="Allowances" items={allowances} onChange={setAllowances} />
               <LineItemEditor title="Deductions" items={deductions} onChange={setDeductions} />
-              {basicSalary > 0 && (
-                <div className="rounded-md bg-muted p-3 text-sm space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Basic salary</span>
-                    <span className="font-mono">KES {basicSalary.toLocaleString()}</span>
-                  </div>
-                  {totalAllowances > 0 && (
-                    <div className="flex justify-between text-emerald-600">
-                      <span>+ Allowances</span>
-                      <span className="font-mono">KES {totalAllowances.toLocaleString()}</span>
-                    </div>
-                  )}
-                  {totalDeductions > 0 && (
-                    <div className="flex justify-between text-destructive">
-                      <span>- Deductions</span>
-                      <span className="font-mono">KES {totalDeductions.toLocaleString()}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between font-semibold border-t pt-1 mt-1">
-                    <span>Net pay</span>
-                    <span className="font-mono">KES {netPay.toLocaleString()}</span>
-                  </div>
-                </div>
-              )}
             </TabsContent>
 
             <TabsContent value="payment" className="space-y-3 pt-3">
@@ -298,7 +271,7 @@ export const EmployeeFormDialog = ({ open, onOpenChange, employee, onSaved }: Pr
               </Field>
               {paymentMethod === "M-Pesa" && (
                 <Field label="M-Pesa number" required error={errors.mpesa_number?.message}>
-                  <Input placeholder="+254712345678" {...register("mpesa_number")} />
+                  <Input placeholder="0700920985" {...register("mpesa_number")} />
                 </Field>
               )}
               {paymentMethod === "Bank" && (

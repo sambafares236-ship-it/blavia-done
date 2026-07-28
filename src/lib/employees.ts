@@ -33,6 +33,21 @@ export interface Employee {
 
 const phoneRegex = /^\+254\d{9}$/;
 
+/**
+ * Accepts common local input formats (0700920985, 700920985, 254700920985,
+ * +254700920985) and standardizes to +254XXXXXXXXX for storage.
+ */
+export const normalizeKenyanPhone = (raw: string): string => {
+  let p = (raw ?? "").trim().replace(/[\s-]/g, "");
+  if (!p) return p;
+  if (p.startsWith("+")) p = p.slice(1);
+  if (p.startsWith("0")) p = "254" + p.slice(1);
+  else if (!p.startsWith("254") && p.length === 9) p = "254" + p;
+  return `+${p}`;
+};
+
+const isValidKenyanPhone = (raw: string): boolean => phoneRegex.test(normalizeKenyanPhone(raw));
+
 export const parseJsonObject = (v: string | undefined): Record<string, number> => {
   if (!v || v.trim() === "") return {};
   try {
@@ -47,7 +62,7 @@ export const employeeFormSchema = z
   .object({
     full_name: z.string().trim().min(1, "Full name is required").max(120),
     email: z.string().trim().email("Invalid email").max(255).optional().or(z.literal("")),
-    phone: z.string().trim().regex(phoneRegex, "Phone must be +254XXXXXXXXX"),
+    phone: z.string().trim().refine(isValidKenyanPhone, "Enter a valid Kenyan number, e.g. 0700920985"),
     id_number: z.string().trim().max(50).optional().or(z.literal("")),
     kra_pin: z.string().trim().max(50).optional().or(z.literal("")),
     nssf_number: z.string().trim().max(50).optional().or(z.literal("")),
@@ -73,11 +88,11 @@ export const employeeFormSchema = z
       });
     }
     if (data.payment_method === "M-Pesa") {
-      if (!data.mpesa_number || !phoneRegex.test(data.mpesa_number)) {
+      if (!data.mpesa_number || !isValidKenyanPhone(data.mpesa_number)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["mpesa_number"],
-          message: "Please enter the M-Pesa number (+254XXXXXXXXX)",
+          message: "Please enter the M-Pesa number, e.g. 0700920985",
         });
       }
     }

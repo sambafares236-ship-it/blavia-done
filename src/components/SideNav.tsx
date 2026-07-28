@@ -21,8 +21,8 @@ const links: NavEntry[] = [
   { to: "/home", label: "Home", icon: House, end: true },
   { to: "/executive", label: "Executive BI", icon: Gauge },
   {
-    group: "actuarial",
-    label: "Actuarial Accounting",
+    group: "accrual",
+    label: "Accrual Accounting",
     icon: Calculator,
     children: [
       { to: "/payments", label: "Transactions", icon: Wallet },
