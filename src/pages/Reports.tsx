@@ -26,7 +26,6 @@ import {
 import { supabase, Transaction } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
 import {
-  balanceSheet,
   cashFlow,
   changesInEquity,
   downloadCsv,
@@ -37,6 +36,7 @@ import {
   type CompanyType,
   type ReportLine,
 } from "@/lib/reports";
+import { combinedBalanceSheet, type AssetRow, type LiabilityRow } from "@/lib/balanceSheet";
 import { ApprovalWorkflow } from "@/components/reports/ApprovalWorkflow";
 import { AssetsLiabilitiesChart } from "@/components/reports/AssetsLiabilitiesChart";
 import { cn } from "@/lib/utils";
@@ -112,6 +112,8 @@ const linesToWorkbook = (sheets: { name: string; lines: ReportLine[] }[]) => {
 
 const Reports = () => {
   const [allTxns, setAllTxns] = useState<Transaction[]>([]);
+  const [assets, setAssets] = useState<AssetRow[]>([]);
+  const [liabilities, setLiabilities] = useState<LiabilityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<PeriodMode>("monthly");
   const [preset, setPreset] = useState<RangePreset>("this_month");
@@ -121,19 +123,29 @@ const Reports = () => {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const { data, error } = await supabase
-        .from("transactions")
-        .select("*")
-        .order("txn_date", { ascending: false })
-        .limit(2000);
-      if (error) {
+      const [txnRes, assetRes, liabRes] = await Promise.all([
+        supabase.from("transactions").select("*").order("txn_date", { ascending: false }).limit(2000),
+        supabase.from("assets").select("*").order("created_at", { ascending: false }),
+        supabase.from("liabilities").select("*").order("created_at", { ascending: false }),
+      ]);
+      if (txnRes.error) {
         toast({
           title: "Couldn't load transactions",
-          description: error.message,
+          description: txnRes.error.message,
           variant: "destructive",
         });
       } else {
-        setAllTxns((data ?? []) as Transaction[]);
+        setAllTxns((txnRes.data ?? []) as Transaction[]);
+      }
+      if (assetRes.error) {
+        toast({ title: "Couldn't load assets", description: assetRes.error.message, variant: "destructive" });
+      } else {
+        setAssets((assetRes.data ?? []) as AssetRow[]);
+      }
+      if (liabRes.error) {
+        toast({ title: "Couldn't load liabilities", description: liabRes.error.message, variant: "destructive" });
+      } else {
+        setLiabilities((liabRes.data ?? []) as LiabilityRow[]);
       }
       setLoading(false);
     };
@@ -147,7 +159,10 @@ const Reports = () => {
 
   const pl = useMemo(() => profitAndLoss(periodTxns, companyType), [periodTxns, companyType]);
   const cf = useMemo(() => cashFlow(periodTxns), [periodTxns]);
-  const bs = useMemo(() => balanceSheet(allTxns, to), [allTxns, to]);
+  const bs = useMemo(
+    () => combinedBalanceSheet(allTxns, assets, liabilities, to),
+    [allTxns, assets, liabilities, to],
+  );
   const sce = useMemo(() => changesInEquity(periodTxns, companyType), [periodTxns, companyType]);
 
   // Comprehensive income = Net profit + (placeholder) Other Comprehensive Income items
