@@ -10,6 +10,7 @@ interface Profile {
   phone: string | null;
   role: string;
   business_id: string | null;
+  terms_accepted_at: string | null;
 }
 
 interface Business {
@@ -77,7 +78,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, email, full_name, company_name, phone, role, business_id")
+        .select("id, email, full_name, company_name, phone, role, business_id, terms_accepted_at")
         .eq("id", userId)
         .maybeSingle();
 
@@ -120,6 +121,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             phone: phone,
             role: "owner",
             business_id: bizData.id,
+            terms_accepted_at: metadata.terms_accepted_at ?? null,
           })
           .select()
           .single();

@@ -27,9 +27,11 @@ const Signup = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!termsAccepted) return;
     setSubmitting(true);
 
     const { error } = await supabase.auth.signUp({
@@ -41,6 +43,7 @@ const Signup = () => {
           full_name: fullName,
           company_name: companyName,
           phone,
+          terms_accepted_at: new Date().toISOString(),
         },
       },
     });
@@ -211,11 +214,42 @@ const Signup = () => {
             </div>
           </div>
 
+          <label className="flex items-start gap-2.5 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              required
+              checked={termsAccepted}
+              onChange={(e) => setTermsAccepted(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300"
+              style={{ accentColor: BRAND }}
+            />
+            <span>
+              I have read and agree to the{" "}
+              <Link
+                to="/legal#terms"
+                target="_blank"
+                className="font-medium hover:underline"
+                style={{ color: BRAND }}
+              >
+                Terms of Service
+              </Link>{" "}
+              and{" "}
+              <Link
+                to="/legal#privacy"
+                target="_blank"
+                className="font-medium hover:underline"
+                style={{ color: BRAND }}
+              >
+                Privacy Policy
+              </Link>
+            </span>
+          </label>
+
           <Button
             type="submit"
             className="w-full text-white hover:opacity-90"
             style={{ background: BRAND }}
-            disabled={submitting}
+            disabled={submitting || !termsAccepted}
           >
             {submitting ? "Creating account…" : "Create account"}
           </Button>
@@ -231,18 +265,6 @@ const Signup = () => {
             </Link>
           </p>
         </form>
-
-        {/* Footer */}
-        <p className="text-center text-xs text-muted-foreground">
-          By creating an account you agree to our{" "}
-          <span className="font-medium cursor-pointer hover:underline" style={{ color: BRAND }}>
-            Terms of Service
-          </span>{" "}
-          and{" "}
-          <span className="font-medium cursor-pointer hover:underline" style={{ color: BRAND }}>
-            Privacy Policy
-          </span>
-        </p>
       </div>
     </div>
   );
