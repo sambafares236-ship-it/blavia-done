@@ -339,7 +339,14 @@ const InvoiceDetail = () => {
 
   const status = statusConfig[invoice.status] || statusConfig.draft;
   const StatusIcon = status.icon;
-  const showPaymentPanel = invoice.status !== "paid";
+  // Nothing in this codebase flips invoice.status from "sent" to "overdue"
+  // automatically, so derive it from due_date the same way Receivables does,
+  // rather than trusting a status value that may never actually get set.
+  const isPastDue = !!invoice.due_date && invoice.due_date < todayStr();
+  const isOverdue = invoice.status === "overdue" || (isPastDue && invoice.status !== "paid" && invoice.status !== "draft");
+  // Draft invoices still need this panel — it's how they get sent the first
+  // time. Once sent and not yet due, just show the read-only details below.
+  const showPaymentPanel = invoice.status === "draft" || isOverdue;
 
   return (
     <AppShell>
