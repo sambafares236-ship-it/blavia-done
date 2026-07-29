@@ -126,7 +126,7 @@ const Payments = () => {
   const periodKey = viewMode === "month" ? selectedMonth.key : viewMode === "all" ? "all-time" : `${customFrom}_to_${customTo}`;
   const onCsv = () => downloadCsv(`payments-${periodKey}.csv`, headers, exportRows());
   const onPdf = () => printTableAsPdf({
-    title: "Payments",
+    title: "Transactions",
     subtitle: periodLabel,
     headers, rows: exportRows(),
   });
@@ -138,7 +138,7 @@ const Payments = () => {
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">
-              Payments
+              Transactions
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {loading ? "Loading…" : `${totals.count} transaction${totals.count !== 1 ? "s" : ""} ${viewMode === "all" ? "(all time)" : viewMode === "custom" ? `from ${periodLabel}` : `in ${periodLabel}`}`}
