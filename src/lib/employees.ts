@@ -1,7 +1,7 @@
 ﻿import { z } from "zod";
 
 export type EmployeeStatus = "active" | "on_leave" | "terminated";
-export type PaymentMethod = "M-Pesa" | "Bank" | "Cash";
+export type PaymentMethod = "M-Pesa" | "Bank";
 
 /**
  * Mirrors the `employees` table. Note there is no separate payroll-number
@@ -22,6 +22,7 @@ export interface Employee {
   deductions: Record<string, number> | null;
   payment_method: PaymentMethod;
   mpesa_number: string | null;
+  bank_name: string | null;
   bank_account: string | null;
   department: string | null;
   position: string | null;
@@ -70,8 +71,9 @@ export const employeeFormSchema = z
     basic_salary: z.string().min(1, "Please enter a salary amount"),
     allowances_json: z.string().optional().or(z.literal("")),
     deductions_json: z.string().optional().or(z.literal("")),
-    payment_method: z.enum(["M-Pesa", "Bank", "Cash"]),
+    payment_method: z.enum(["M-Pesa", "Bank"]),
     mpesa_number: z.string().trim().optional().or(z.literal("")),
+    bank_name: z.string().trim().max(120).optional().or(z.literal("")),
     bank_account: z.string().trim().max(50).optional().or(z.literal("")),
     department: z.string().trim().max(80).optional().or(z.literal("")),
     position: z.string().trim().max(80).optional().or(z.literal("")),
@@ -97,6 +99,13 @@ export const employeeFormSchema = z
       }
     }
     if (data.payment_method === "Bank") {
+      if (!data.bank_name || data.bank_name.trim().length < 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["bank_name"],
+          message: "Please enter the bank name",
+        });
+      }
       if (!data.bank_account || data.bank_account.length < 4) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

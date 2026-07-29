@@ -90,7 +90,7 @@ const empty: EmployeeFormValues = {
   basic_salary: "",
   allowances_json: "{}", deductions_json: "{}",
   payment_method: "M-Pesa", mpesa_number: "",
-  bank_account: "", department: "", position: "",
+  bank_name: "", bank_account: "", department: "", position: "",
   hire_date: "", status: "active",
 };
 
@@ -117,8 +117,9 @@ export const EmployeeFormDialog = ({ open, onOpenChange, employee, onSaved }: Pr
       basic_salary: employee.basic_salary != null ? String(employee.basic_salary) : "",
       allowances_json: JSON.stringify(employee.allowances ?? {}),
       deductions_json: JSON.stringify(employee.deductions ?? {}),
-      payment_method: employee.payment_method ?? "M-Pesa",
+      payment_method: employee.payment_method === "Bank" ? "Bank" : "M-Pesa",
       mpesa_number: employee.mpesa_number ?? "",
+      bank_name: employee.bank_name ?? "",
       bank_account: employee.bank_account ?? "",
       department: employee.department ?? "",
       position: employee.position ?? "",
@@ -162,6 +163,7 @@ export const EmployeeFormDialog = ({ open, onOpenChange, employee, onSaved }: Pr
       deductions: toRecord(deductions),
       payment_method: parsed.payment_method,
       mpesa_number: parsed.mpesa_number ? normalizeKenyanPhone(parsed.mpesa_number) : null,
+      bank_name: parsed.bank_name || null,
       bank_account: parsed.bank_account || null,
       department: parsed.department || null,
       position: parsed.position || null,
@@ -260,7 +262,7 @@ export const EmployeeFormDialog = ({ open, onOpenChange, employee, onSaved }: Pr
                   render={({ field }) => (
                     <RadioGroup value={field.value} onValueChange={field.onChange}
                       className="flex flex-wrap gap-4">
-                      {(["M-Pesa", "Bank", "Cash"] as const).map((m) => (
+                      {(["M-Pesa", "Bank"] as const).map((m) => (
                         <label key={m}
                           className="flex cursor-pointer items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm">
                           <RadioGroupItem value={m} id={`pm-${m}`} /> {m}
@@ -275,9 +277,14 @@ export const EmployeeFormDialog = ({ open, onOpenChange, employee, onSaved }: Pr
                 </Field>
               )}
               {paymentMethod === "Bank" && (
-                <Field label="Bank account number" required error={errors.bank_account?.message}>
-                  <Input placeholder="e.g. 1234567890" {...register("bank_account")} />
-                </Field>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Bank name" required error={errors.bank_name?.message}>
+                    <Input placeholder="e.g. Equity Bank" {...register("bank_name")} />
+                  </Field>
+                  <Field label="Bank account number" required error={errors.bank_account?.message}>
+                    <Input placeholder="e.g. 1234567890" {...register("bank_account")} />
+                  </Field>
+                </div>
               )}
             </TabsContent>
 

@@ -114,6 +114,7 @@ export const EmployeeViewDialog = ({ open, onOpenChange, employee, onEdit }: Pro
             </h3>
             <Row label="Method" value={employee.payment_method} />
             <Row label="M-Pesa number" value={employee.mpesa_number} />
+            <Row label="Bank name" value={employee.bank_name} />
             <Row label="Bank account" value={employee.bank_account} />
           </section>
 

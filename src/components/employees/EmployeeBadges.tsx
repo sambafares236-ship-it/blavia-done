@@ -27,7 +27,6 @@ export const PaymentMethodBadge = ({ method }: { method: PaymentMethod }) => {
   const styles: Record<PaymentMethod, string> = {
     "M-Pesa": "bg-success/15 text-success border border-success/30",
     Bank: "bg-shield/15 text-shield border border-shield/30",
-    Cash: "bg-muted text-muted-foreground border border-border",
   };
   return (
     <span
