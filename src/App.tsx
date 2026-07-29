@@ -26,6 +26,7 @@ import Payables from "./pages/Payables.tsx";
 import CreateInvoice from "./pages/CreateInvoice.tsx";
 import InvoiceDetail from "./pages/InvoiceDetail.tsx";
 import PublicPayInvoice from "./pages/PublicPayInvoice.tsx";
+import Legal from "./pages/Legal.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -38,11 +39,12 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
-            {/* Public � no login required */}
+            {/* Public — no login required */}
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/pay/:id" element={<PublicPayInvoice />} />
+            <Route path="/legal" element={<Legal />} />
 
             {/* Protected */}
             <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
