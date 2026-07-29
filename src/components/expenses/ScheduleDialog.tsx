@@ -30,7 +30,6 @@ const FREQUENCIES = [
   { v: "yearly", label: "Yearly" },
 ];
 
-const METHODS = ["M-Pesa", "Bank", "Cash", "Card"];
 const CATEGORIES = [
   "Rent", "Salaries", "Electricity", "Internet & Telephone",
   "Marketing", "Professional Fees", "Loan Repayment",
@@ -66,7 +65,6 @@ export const ScheduleDialog = ({ open, onOpenChange, initial, onSaved }: Props) 
   const [amount, setAmount] = useState("0");
   const [frequency, setFrequency] = useState("monthly");
   const [nextDue, setNextDue] = useState(today());
-  const [method, setMethod] = useState<string>("M-Pesa");
   const [accountRef, setAccountRef] = useState("");
   const [autoPost, setAutoPost] = useState(false);
   const [notes, setNotes] = useState("");
@@ -79,7 +77,6 @@ export const ScheduleDialog = ({ open, onOpenChange, initial, onSaved }: Props) 
     setAmount(String(initial?.amount ?? 0));
     setFrequency(initial?.frequency ?? "monthly");
     setNextDue(initial?.next_due ?? today());
-    setMethod(initial?.payment_method ?? "M-Pesa");
     setAccountRef(initial?.account_ref ?? "");
     setAutoPost(initial?.auto_post ?? false);
     setNotes(initial?.notes ?? "");
@@ -97,7 +94,6 @@ export const ScheduleDialog = ({ open, onOpenChange, initial, onSaved }: Props) 
       amount: Number(amount) || 0,
       frequency,
       next_due: nextDue,
-      payment_method: method,
       account_ref: accountRef.trim() || null,
       auto_post: autoPost,
       notes: notes.trim() || null,
@@ -176,15 +172,6 @@ export const ScheduleDialog = ({ open, onOpenChange, initial, onSaved }: Props) 
                 <Label htmlFor="due">Next due</Label>
                 <Input id="due" type="date" value={nextDue}
                   onChange={(e) => setNextDue(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Payment method</Label>
-                <Select value={method} onValueChange={setMethod}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {METHODS.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                  </SelectContent>
-                </Select>
               </div>
               <div className="col-span-2 space-y-2">
                 <Label htmlFor="ref">Account reference</Label>
