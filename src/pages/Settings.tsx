@@ -19,7 +19,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
 import { BUSINESS_CATEGORIES } from "@/lib/taxRules";
-import { cleanKraPin, isValidKraPin, type EtimsMode } from "@/lib/kraTax";
+import type { EtimsMode } from "@/lib/kraTax";
 import { useNavigate } from "react-router-dom";
 
 const KENYA_COUNTIES = [
@@ -318,14 +318,6 @@ const Settings = () => {
       toast({ title: "KRA PIN required", variant: "destructive" });
       return;
     }
-    if (!isValidKraPin(kraPin)) {
-      toast({
-        title: "That KRA PIN doesn't look right",
-        description: "A KRA PIN is 11 characters — a letter, nine digits, then a letter (e.g. A123456789Z).",
-        variant: "destructive",
-      });
-      return;
-    }
     // Only the integrated route needs a device serial — eTIMS Lite users issue
     // on KRA's own channels and just record the result here.
     if (etimsMode === "oscu" && !deviceSerial) {
@@ -339,7 +331,7 @@ const Settings = () => {
     setEtimsSaving(true);
     const payload = {
       business_id: business.id,
-      kra_pin: cleanKraPin(kraPin),
+      kra_pin: kraPin.toUpperCase().trim(),
       branch_id: branchId.trim() || "00",
       device_serial: deviceSerial.trim() || null,
       environment,
@@ -586,7 +578,7 @@ const Settings = () => {
               <Checkbox id="vat" checked={vatRegistered} onCheckedChange={(v) => setVatRegistered(Boolean(v))} />
               <div>
                 <Label htmlFor="vat" className="cursor-pointer">VAT Registered</Label>
-                <p className="text-xs text-muted-foreground">Enables eTIMS integration and VAT calculations.</p>
+                <p className="text-xs text-muted-foreground">Enables VAT calculations on invoices and reports.</p>
               </div>
             </div>
           </div>
@@ -616,26 +608,25 @@ const Settings = () => {
           </div>
         </Card>
 
-        {/* ── 5. eTIMS (only if VAT registered) ──────────────────────────── */}
-        {vatRegistered && (
-          <Card className="border border-border/60 p-6 shadow-card">
-            <div className="flex items-start justify-between mb-5">
-              <SectionHeader
-                icon={Shield}
-                title="eTIMS / KRA Compliance"
-                description="Required for every business, whether or not you are VAT registered."
-              />
-              {etimsConfig && !etimsLoading && (
-                <EtimsStatusBadge status={etimsConfig.status || "pending"} />
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground -mt-4 mb-4 ml-12">
-              Onboard on{" "}
-              <a href="https://etims.kra.go.ke" target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
-                etims.kra.go.ke
-              </a>{" "}
-              first — KRA issues the device serial there.
-            </p>
+        {/* ── 5. eTIMS (required for every business, VAT-registered or not) ── */}
+        <Card className="border border-border/60 p-6 shadow-card">
+          <div className="flex items-start justify-between mb-5">
+            <SectionHeader
+              icon={Shield}
+              title="eTIMS / KRA Compliance"
+              description="Required for every business, whether or not you are VAT registered."
+            />
+            {etimsConfig && !etimsLoading && (
+              <EtimsStatusBadge status={etimsConfig.status || "pending"} />
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground -mt-4 mb-4 ml-12">
+            Onboard on{" "}
+            <a href="https://etims.kra.go.ke" target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
+              etims.kra.go.ke
+            </a>{" "}
+            first — KRA issues the device serial there.
+          </p>
 
             {etimsLoading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -683,7 +674,7 @@ const Settings = () => {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label htmlFor="kra_pin">KRA PIN</Label>
-                    <Input id="kra_pin" value={kraPin} onChange={(e) => setKraPin(cleanKraPin(e.target.value))} placeholder="P000000000A" className="font-mono uppercase" maxLength={11} />
+                    <Input id="kra_pin" value={kraPin} onChange={(e) => setKraPin(e.target.value.toUpperCase())} placeholder="P000000000A" className="font-mono uppercase" />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="branch_id">Branch ID</Label>
@@ -731,7 +722,6 @@ const Settings = () => {
               </div>
             )}
           </Card>
-        )}
 
         {/* Save button */}
         <div className="flex justify-end pb-6">

@@ -56,6 +56,7 @@ interface PendingRun {
   total_gross: number;
   total_net: number;
   total_deductions: number;
+  total_employer_contributions: number | null;
   notes: string;
   created_at: string;
   payslips: {
@@ -318,6 +319,34 @@ export const RunPayrollSection = () => {
           title: `Payments initiated! ✅`,
           description: `${data.success_count} of ${data.total} employees paid. ${data.fail_count > 0 ? data.fail_count + " failed — retry from pending runs." : ""}`,
         });
+
+        // Record this as a real business expense so it shows up in Reports/P&L.
+        // Cost = gross pay (net to staff + PAYE/NSSF/Housing withheld on their
+        // behalf) + the employer's OWN NSSF and Housing Levy matches — the
+        // employer contributions are money the business pays out of pocket,
+        // on top of gross, and were previously invisible outside payroll.
+        const employerCost = Math.round(
+          (approvalRun.total_gross || 0) + (approvalRun.total_employer_contributions || 0),
+        );
+        const { error: txnError } = await supabase.from("transactions").insert({
+          business_id: businessId,
+          txn_date: today(),
+          narration: `Payroll — ${approvalRun.run_period} (${data.success_count} employee${data.success_count === 1 ? "" : "s"})`,
+          amount: -employerCost,
+          category: "Payroll",
+          txn_type: "Expense",
+          status: "Approved",
+        });
+        if (txnError) {
+          // Payment already went out — don't block on this, but flag it so
+          // the run doesn't silently go missing from expense reports.
+          toast({
+            title: "Payroll paid, but couldn't log the expense",
+            description: `${txnError.message} — add it to Reports manually so your P&L stays accurate.`,
+            variant: "destructive",
+          });
+        }
+
         setApprovalRun(null);
         fetchPendingRuns(businessId);
       }
