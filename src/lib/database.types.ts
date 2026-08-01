@@ -1547,6 +1547,7 @@ export type Database = {
           failure_alerted_at: string | null
           gross_pay: number
           housing_levy: number | null
+          housing_levy_employer: number | null
           id: string
           net_pay: number
           nhif_employee: number | null
@@ -1580,6 +1581,7 @@ export type Database = {
           failure_alerted_at?: string | null
           gross_pay: number
           housing_levy?: number | null
+          housing_levy_employer?: number | null
           id?: string
           net_pay: number
           nhif_employee?: number | null
@@ -1613,6 +1615,7 @@ export type Database = {
           failure_alerted_at?: string | null
           gross_pay?: number
           housing_levy?: number | null
+          housing_levy_employer?: number | null
           id?: string
           net_pay?: number
           nhif_employee?: number | null

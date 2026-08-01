@@ -17,11 +17,11 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   PERSONAL_RELIEF,
-  HOUSING_LEVY,
-  SHIF,
-  NSSF_RATE,
-  NSSF_CAP,
   STANDARD_DAYS,
+  calcNssf,
+  calcHousingLevy,
+  calcShif,
+  calcEmployerCost,
   calcPAYEBeforeRelief,
   calcTaxable,
 } from "@/lib/payeCalculator";
@@ -42,6 +42,12 @@ interface PreviewRow {
   taxBeforeRelief: number;
   paye: number;
   net: number;
+  /** Employer's own matching NSSF contribution — not deducted from the employee. */
+  nssfEmployer: number;
+  /** Employer's own matching Housing Levy contribution — not deducted from the employee. */
+  housingEmployer: number;
+  /** Total the employer actually pays out for this employee this period: gross + their own statutory matches. */
+  employerCost: number;
 }
 
 interface PendingRun {
@@ -159,9 +165,9 @@ export const RunPayrollSection = () => {
       const comm = commission[e.id] ?? 0;
       const allowanceTotal = Object.values(e.allowances ?? {}).reduce((s, v) => s + (Number(v) || 0), 0);
       const gross = basic + comm + allowanceTotal;
-      const nssf = Math.min(gross * NSSF_RATE, NSSF_CAP);
-      const housing = gross * HOUSING_LEVY;
-      const shif = gross * SHIF;
+      const nssf = calcNssf(gross);
+      const housing = calcHousingLevy(gross);
+      const shif = calcShif(gross);
       const cotu = Number(e.deductions?.cotu) || 0;
       const welfare = Number(e.deductions?.welfare ?? e.deductions?.staff_welfare) || 0;
       const taxable = calcTaxable(gross, nssf, housing, shif);
@@ -171,9 +177,15 @@ export const RunPayrollSection = () => {
         .filter(([k]) => !["cotu", "welfare", "staff_welfare"].includes(k))
         .reduce((s, [, v]) => s + (Number(v) || 0), 0);
       const net = gross - paye - housing - shif - nssf - cotu - welfare - otherDeductions;
+      // NSSF and Housing Levy are matched equally by the employer — this is
+      // money the employer pays out, separate from what's deducted from staff.
+      const nssfEmployer = nssf;
+      const housingEmployer = housing;
+      const employerCost = calcEmployerCost(gross, nssfEmployer, housingEmployer);
       return {
         employee: e, selected: !!selected[e.id], daysWorked: days, commission: comm,
         basic, gross, nssf, housing, shif, cotu, welfare, taxable, taxBeforeRelief, paye, net,
+        nssfEmployer, housingEmployer, employerCost,
       };
     });
   }, [employees, selected, daysWorked, commission]);
@@ -185,6 +197,10 @@ export const RunPayrollSection = () => {
       gross: sel.reduce((s, r) => s + r.gross, 0),
       net: sel.reduce((s, r) => s + r.net, 0),
       paye: sel.reduce((s, r) => s + r.paye, 0),
+      // Employer's own statutory matches (NSSF + Housing Levy) — not withheld from employees.
+      employerContributions: sel.reduce((s, r) => s + r.nssfEmployer + r.housingEmployer, 0),
+      // What this run actually costs the business: gross paid out + employer's own statutory matches.
+      employerCost: sel.reduce((s, r) => s + r.employerCost, 0),
     };
   }, [preview]);
 
@@ -216,7 +232,7 @@ export const RunPayrollSection = () => {
         total_gross: Math.round(selectedRows.reduce((s, r) => s + r.gross, 0)),
         total_deductions: Math.round(selectedRows.reduce((s, r) => s + r.paye + r.nssf + r.housing + r.shif + r.cotu + r.welfare, 0)),
         total_net: Math.round(selectedRows.reduce((s, r) => s + r.net, 0)),
-        total_employer_contributions: Math.round(selectedRows.reduce((s, r) => s + r.nssf, 0)),
+        total_employer_contributions: Math.round(selectedRows.reduce((s, r) => s + r.nssfEmployer + r.housingEmployer, 0)),
         status: "draft",
         notes: `Payroll run for ${periodStart} → ${periodEnd}`,
       })
@@ -245,8 +261,12 @@ export const RunPayrollSection = () => {
       other_deductions: { cotu: Math.round(r.cotu), welfare: Math.round(r.welfare) },
       total_deductions: Math.round(r.paye + r.nssf + r.housing + r.shif + r.cotu + r.welfare),
       net_pay: Math.round(r.net),
-      nssf_employer: Math.round(r.nssf),
-      nhif_employer: Math.round(r.shif * 0.5),
+      // Employer's own matching contributions — this is money the business
+      // pays, on top of net pay and PAYE, not an amount withheld from staff.
+      nssf_employer: Math.round(r.nssfEmployer),
+      housing_levy_employer: Math.round(r.housingEmployer),
+      // SHIF has no employer match under current law — always 0, not shif*0.5.
+      nhif_employer: 0,
       payment_method: r.employee.payment_method,
       payment_status: "pending",
     }));
@@ -421,6 +441,24 @@ export const RunPayrollSection = () => {
         </Card>
       </div>
 
+      {/* Employer's own statutory cost — separate from what's withheld from staff */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Card className="border border-warning/30 bg-warning/5 p-4 shadow-card">
+          <p className="text-xs text-muted-foreground">Employer Statutory Contributions</p>
+          <p className="mt-1 text-xl font-bold text-warning">{fmtKES(totals.employerContributions)}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Your matching NSSF (6%) + Housing Levy (1.5%) — this is your money, not deducted from staff pay.
+          </p>
+        </Card>
+        <Card className="border border-primary/30 bg-primary/5 p-4 shadow-card">
+          <p className="text-xs text-muted-foreground">Total Cost to Business</p>
+          <p className="mt-1 text-xl font-bold text-primary">{fmtKES(totals.employerCost)}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Gross pay + your statutory contributions. What this run actually costs you.
+          </p>
+        </Card>
+      </div>
+
       {/* Preview table */}
       <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-card">
         <Table className="min-w-[1600px] text-xs">
@@ -446,19 +484,22 @@ export const RunPayrollSection = () => {
               <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground">Relief</TableHead>
               <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground">PAYE</TableHead>
               <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground">Net Pay</TableHead>
+              <TableHead className="text-right text-[10px] uppercase tracking-wide text-warning border-l border-border">Employer NSSF</TableHead>
+              <TableHead className="text-right text-[10px] uppercase tracking-wide text-warning">Employer Housing</TableHead>
+              <TableHead className="text-right text-[10px] uppercase tracking-wide text-primary">Cost to Employer</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && (
               <TableRow>
-                <TableCell colSpan={18} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={21} className="py-8 text-center text-sm text-muted-foreground">
                   Loading active employees…
                 </TableCell>
               </TableRow>
             )}
             {!loading && preview.length === 0 && (
               <TableRow>
-                <TableCell colSpan={18} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={21} className="py-8 text-center text-sm text-muted-foreground">
                   No active employees found for your business.
                 </TableCell>
               </TableRow>
@@ -499,6 +540,9 @@ export const RunPayrollSection = () => {
                 <TableCell className="text-right tabular-nums text-muted-foreground">{fmtKES(PERSONAL_RELIEF)}</TableCell>
                 <TableCell className="text-right tabular-nums text-destructive">{fmtKES(r.paye)}</TableCell>
                 <TableCell className="text-right font-semibold tabular-nums text-success">{fmtKES(r.net)}</TableCell>
+                <TableCell className="text-right tabular-nums text-warning border-l border-border">{fmtKES(r.nssfEmployer)}</TableCell>
+                <TableCell className="text-right tabular-nums text-warning">{fmtKES(r.housingEmployer)}</TableCell>
+                <TableCell className="text-right font-semibold tabular-nums text-primary">{fmtKES(r.employerCost)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -512,7 +556,8 @@ export const RunPayrollSection = () => {
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3">
         <p className="text-xs text-muted-foreground">
-          PAYE uses KRA monthly bands (2024). NSSF 6% (cap KSh 4,320), Housing Levy 1.5%, SHIF 2.75%, personal relief KSh 2,400.
+          PAYE uses KRA monthly bands (2024). NSSF: 6% on the first KSh 9,000 + 6% on KSh 9,000–108,000 (KSh 6,480 max, per side), Housing Levy 1.5%, SHIF 2.75%, personal relief KSh 2,400.
+          Employer NSSF and Housing Levy shown above are matched contributions the business pays — SHIF has no employer match.
         </p>
         <Button onClick={runPayroll} disabled={running || !totals.count}
           className="gap-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90">

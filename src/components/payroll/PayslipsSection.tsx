@@ -25,6 +25,8 @@ interface Payslip {
   nssf_employee: number | null;
   nhif_employee: number | null;
   housing_levy: number | null;
+  nssf_employer: number | null;
+  housing_levy_employer: number | null;
   other_deductions: { cotu?: number; welfare?: number } | null;
   paye: number | null;
   total_deductions: number | null;
@@ -101,7 +103,9 @@ export const PayslipsSection = ({ employeeId, onClearFilter }: Props) => {
       "Basic Salary", "Allowances", "Gross Pay",
       "NSSF", "Housing Levy", "SHIF", "COTU Fund", "Staff Welfare",
       "Taxable Income", "PAYE Before Relief", "Tax Relief", "PAYE Payable",
-      "Total Deductions", "Net Pay", "Payment Method", "Status"
+      "Total Deductions", "Net Pay",
+      "Employer NSSF", "Employer Housing Levy", "Total Cost to Employer",
+      "Payment Method", "Status"
     ];
     const lines = [headers.join(",")];
     rows.forEach((r) => {
@@ -115,6 +119,9 @@ export const PayslipsSection = ({ employeeId, onClearFilter }: Props) => {
       const allowTotal = Object.values(r.allowances ?? {}).reduce((a, v) => a + (Number(v) || 0), 0);
       const cotu = Number(r.other_deductions?.cotu) || 0;
       const welfare = Number(r.other_deductions?.welfare) || 0;
+      const nssfEmployer = Number(r.nssf_employer) || 0;
+      const housingEmployer = Number(r.housing_levy_employer) || 0;
+      const employerCost = gross + nssfEmployer + housingEmployer;
 
       const vals = [
         emp?.full_name ?? r.employee_id,
@@ -136,6 +143,9 @@ export const PayslipsSection = ({ employeeId, onClearFilter }: Props) => {
         r.paye ?? "",
         r.total_deductions ?? "",
         r.net_pay ?? "",
+        nssfEmployer,
+        housingEmployer,
+        employerCost,
         r.payment_method ?? "",
         r.payment_status ?? "",
       ];
@@ -238,6 +248,9 @@ export const PayslipsSection = ({ employeeId, onClearFilter }: Props) => {
               const allowTotal = Object.values(r.allowances ?? {}).reduce((a, v) => a + (Number(v) || 0), 0);
               const cotu = Number(r.other_deductions?.cotu) || 0;
               const welfare = Number(r.other_deductions?.welfare) || 0;
+              const nssfEmployer = Number(r.nssf_employer) || 0;
+              const housingEmployer = Number(r.housing_levy_employer) || 0;
+              const employerCost = gross + nssfEmployer + housingEmployer;
               const isExpanded = expanded === r.id;
 
               return (
@@ -312,6 +325,18 @@ export const PayslipsSection = ({ employeeId, onClearFilter }: Props) => {
                             <div className="flex justify-between font-bold text-sm border-t pt-2 mt-2">
                               <span>NET PAY</span>
                               <span className="text-success">{fmtKES(r.net_pay)}</span>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 space-y-1 rounded-md border border-warning/30 bg-warning/5 p-2">
+                            <div className="font-semibold text-warning uppercase tracking-wide mb-1">
+                              Employer Contributions (paid by you, not deducted from staff)
+                            </div>
+                            <div className="flex justify-between"><span>NSSF (employer match)</span><span>{fmtKES(nssfEmployer)}</span></div>
+                            <div className="flex justify-between"><span>Housing Levy (employer match)</span><span>{fmtKES(housingEmployer)}</span></div>
+                            <div className="flex justify-between font-semibold border-t pt-1 mt-1">
+                              <span>Total Cost to Employer</span>
+                              <span className="text-primary">{fmtKES(employerCost)}</span>
                             </div>
                           </div>
 

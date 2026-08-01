@@ -22,9 +22,12 @@ interface PayslipRow {
   id: string | number;
   period_start: string;
   period_end: string;
+  gross_pay: number;
   net_pay: number;
   paye: number;
   housing_levy: number;
+  nssf_employer: number | null;
+  housing_levy_employer: number | null;
   payment_method: string | null;
   created_at: string;
 }
@@ -34,9 +37,14 @@ interface RunSummary {
   period_start: string;
   period_end: string;
   count: number;
+  grossTotal: number;
   netTotal: number;
   payeTotal: number;
   housingTotal: number;
+  /** Employer's own NSSF + Housing Levy matches — not withheld from staff. */
+  employerContributionsTotal: number;
+  /** What this run actually cost the business: gross paid out + employer's own statutory matches. */
+  employerCostTotal: number;
   runDate: string;
   remitted: boolean;
 }
@@ -71,14 +79,22 @@ export const PayrollHistorySection = () => {
       });
       const summary: RunSummary[] = [...groups.entries()].map(([k, arr]) => {
         const a = arr[0];
+        const grossTotal = arr.reduce((s, r) => s + Number(r.gross_pay || 0), 0);
+        const employerContributionsTotal = arr.reduce(
+          (s, r) => s + Number(r.nssf_employer || 0) + Number(r.housing_levy_employer || 0),
+          0,
+        );
         return {
           key: k,
           period_start: a.period_start,
           period_end: a.period_end,
           count: arr.length,
+          grossTotal,
           netTotal: arr.reduce((s, r) => s + Number(r.net_pay || 0), 0),
           payeTotal: arr.reduce((s, r) => s + Number(r.paye || 0), 0),
           housingTotal: arr.reduce((s, r) => s + Number(r.housing_levy || 0), 0),
+          employerContributionsTotal,
+          employerCostTotal: grossTotal + employerContributionsTotal,
           runDate: a.created_at?.slice(0, 10) ?? a.period_end,
           remitted: new Date(a.period_end) < new Date(),
         };
@@ -96,6 +112,8 @@ export const PayrollHistorySection = () => {
       employees: runs.reduce((s, r) => s + r.count, 0),
       net: runs.reduce((s, r) => s + r.netTotal, 0),
       paye: runs.reduce((s, r) => s + r.payeTotal, 0),
+      employerContributions: runs.reduce((s, r) => s + r.employerContributionsTotal, 0),
+      employerCost: runs.reduce((s, r) => s + r.employerCostTotal, 0),
     }),
     [runs],
   );
@@ -103,14 +121,20 @@ export const PayrollHistorySection = () => {
   const exportAll = () => {
     downloadCsv(
       `payroll-history-${Date.now()}.csv`,
-      ["Period Start", "Period End", "Employees", "Net Pay", "PAYE", "Housing Levy", "Run Date"],
+      [
+        "Period Start", "Period End", "Employees", "Gross Pay", "Net Pay", "PAYE", "Housing Levy",
+        "Employer Contributions (NSSF + Housing)", "Total Cost to Employer", "Run Date",
+      ],
       runs.map((r) => [
         r.period_start,
         r.period_end,
         r.count,
+        Math.round(r.grossTotal),
         Math.round(r.netTotal),
         Math.round(r.payeTotal),
         Math.round(r.housingTotal),
+        Math.round(r.employerContributionsTotal),
+        Math.round(r.employerCostTotal),
         r.runDate,
       ]),
     );
@@ -134,6 +158,23 @@ export const PayrollHistorySection = () => {
         <Card className="border border-border/60 p-4 shadow-card">
           <p className="text-xs text-muted-foreground">PAYE Remitted</p>
           <p className="mt-1 text-xl font-bold text-destructive">{fmtKES(totals.paye)}</p>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Card className="border border-warning/30 bg-warning/5 p-4 shadow-card">
+          <p className="text-xs text-muted-foreground">Your Statutory Contributions</p>
+          <p className="mt-1 text-xl font-bold text-warning">{fmtKES(totals.employerContributions)}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            NSSF + Housing Levy matched by you as employer, across all runs — this is your money, not staff deductions.
+          </p>
+        </Card>
+        <Card className="border border-primary/30 bg-primary/5 p-4 shadow-card">
+          <p className="text-xs text-muted-foreground">Total Payroll Cost</p>
+          <p className="mt-1 text-xl font-bold text-primary">{fmtKES(totals.employerCost)}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Gross pay + your statutory contributions, across all runs.
+          </p>
         </Card>
       </div>
 
@@ -167,6 +208,9 @@ export const PayrollHistorySection = () => {
               <TableHead className="text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 PAYE
               </TableHead>
+              <TableHead className="text-right text-xs font-semibold uppercase tracking-wide text-warning">
+                Employer Contributions
+              </TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Run Date
               </TableHead>
@@ -178,14 +222,14 @@ export const PayrollHistorySection = () => {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                   <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin" />
                   Loading payroll history…
                 </TableCell>
               </TableRow>
             ) : runs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                   No payroll runs yet. Use "Run Payroll" to create your first run.
                 </TableCell>
               </TableRow>
@@ -203,6 +247,9 @@ export const PayrollHistorySection = () => {
                   </TableCell>
                   <TableCell className="text-right tabular-nums text-destructive">
                     {fmtKES(r.payeTotal)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-warning">
+                    {fmtKES(r.employerContributionsTotal)}
                   </TableCell>
                   <TableCell className="text-sm tabular-nums text-muted-foreground">
                     {r.runDate}
