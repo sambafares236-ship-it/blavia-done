@@ -20,9 +20,7 @@ const Legal = () => {
       <header className="border-b px-6 py-5 md:px-10" style={{ borderColor: `${BRAND}15` }}>
         <div className="mx-auto flex max-w-3xl items-center justify-between">
           <Link to="/" className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg p-1.5" style={{ background: BRAND }}>
-              <img src={logo} alt="BLAVIA" className="h-full w-full object-contain" />
-            </div>
+            <img src={logo} alt="BLAVIA" className="h-7 w-auto" />
             <span className="text-base font-bold tracking-tight" style={{ color: BRAND }}>BLAVIA</span>
           </Link>
           <Link to="/" className="flex items-center gap-1.5 text-sm font-medium hover:underline" style={{ color: BRAND }}>

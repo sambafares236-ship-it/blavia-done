@@ -416,9 +416,7 @@ const Landing = () => {
         <footer className="mt-16 border-t pt-10" style={{ borderColor: `${BRAND}15` }}>
           <div className="flex flex-col items-center gap-5 md:flex-row md:items-start md:justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg p-1.5" style={{ background: BRAND }}>
-                <img src={logo} alt="BLAVIA" className="h-full w-full object-contain" />
-              </div>
+              <img src={logo} alt="BLAVIA" className="h-6 w-auto" />
               <span className="text-sm font-bold" style={{ color: BRAND }}>BLAVIA</span>
             </div>
 

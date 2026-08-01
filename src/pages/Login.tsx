@@ -88,21 +88,16 @@ const Login = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen items-center justify-center px-4" style={{ background: BRAND }}>
       <div className="w-full max-w-md space-y-8">
 
         {/* Logo + Header */}
         <div className="flex flex-col items-center gap-3">
-          <div
-            className="flex h-20 w-20 items-center justify-center rounded-2xl p-2"
-            style={{ background: BRAND }}
-          >
-            <img src={logo} alt="BLAVIA" className="h-full w-full object-contain" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight" style={{ color: BRAND }}>
+          <img src={logo} alt="BLAVIA" className="h-14 w-auto" />
+          <h1 className="text-2xl font-bold tracking-tight text-white">
             Sign in to BLAVIA
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-white/70">
             Welcome back. Enter your credentials.
           </p>
         </div>
@@ -111,7 +106,7 @@ const Login = () => {
           // ── Login Form ──────────────────────────────────────
           <form
             onSubmit={handleSubmit}
-            className="space-y-4 rounded-xl border bg-card p-6 shadow-sm"
+            className="space-y-4 rounded-xl border bg-white p-6 shadow-xl"
             style={{ borderColor: `${BRAND}20` }}
           >
             <div className="space-y-2">
@@ -184,7 +179,7 @@ const Login = () => {
           // ── Forgot Password Form ────────────────────────────
           <form
             onSubmit={handleForgotPassword}
-            className="space-y-4 rounded-xl border bg-card p-6 shadow-sm"
+            className="space-y-4 rounded-xl border bg-white p-6 shadow-xl"
             style={{ borderColor: `${BRAND}20` }}
           >
             <div className="space-y-1">

@@ -76,15 +76,10 @@ const Signup = () => {
 
   if (submittedEmail) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
+      <div className="flex min-h-screen items-center justify-center px-4 py-10" style={{ background: BRAND }}>
         <div className="w-full max-w-md space-y-6 text-center">
-          <div
-            className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl p-2"
-            style={{ background: BRAND }}
-          >
-            <img src={logo} alt="BLAVIA" className="h-full w-full object-contain" />
-          </div>
-          <div className="rounded-xl border bg-card p-8 shadow-sm" style={{ borderColor: `${BRAND}20` }}>
+          <img src={logo} alt="BLAVIA" className="mx-auto h-11 w-auto" />
+          <div className="rounded-xl border bg-white p-8 shadow-xl" style={{ borderColor: `${BRAND}20` }}>
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
               <Mail className="h-6 w-6 text-primary" />
             </div>
@@ -119,21 +114,16 @@ const Signup = () => {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
+    <div className="flex min-h-screen items-center justify-center px-4 py-10" style={{ background: BRAND }}>
       <div className="w-full max-w-md space-y-8">
 
         {/* Logo + Header */}
         <div className="flex flex-col items-center gap-3">
-          <div
-            className="flex h-14 w-14 items-center justify-center rounded-xl p-2"
-            style={{ background: BRAND }}
-          >
-            <img src={logo} alt="BLAVIA" className="h-full w-full object-contain" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight" style={{ color: BRAND }}>
+          <img src={logo} alt="BLAVIA" className="h-11 w-auto" />
+          <h1 className="text-2xl font-bold tracking-tight text-white">
             Create your BLAVIA account
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-white/70">
             Manage payments, payroll, tax, and reports.
           </p>
         </div>
@@ -141,7 +131,7 @@ const Signup = () => {
         {/* Form */}
         <form
           onSubmit={handleSubmit}
-          className="space-y-4 rounded-xl border bg-card p-6 shadow-sm"
+          className="space-y-4 rounded-xl border bg-white p-6 shadow-xl"
           style={{ borderColor: `${BRAND}20` }}
         >
           <div className="space-y-2">
