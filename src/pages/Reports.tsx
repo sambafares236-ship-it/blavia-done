@@ -114,6 +114,8 @@ const Reports = () => {
   const [allTxns, setAllTxns] = useState<Transaction[]>([]);
   const [assets, setAssets] = useState<AssetRow[]>([]);
   const [liabilities, setLiabilities] = useState<LiabilityRow[]>([]);
+  const [receivablesTotal, setReceivablesTotal] = useState(0);
+  const [payablesTotal, setPayablesTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<PeriodMode>("monthly");
   const [preset, setPreset] = useState<RangePreset>("this_month");
@@ -123,10 +125,12 @@ const Reports = () => {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const [txnRes, assetRes, liabRes] = await Promise.all([
+      const [txnRes, assetRes, liabRes, invRes, payRes] = await Promise.all([
         supabase.from("transactions").select("*").order("txn_date", { ascending: false }).limit(2000),
         supabase.from("assets").select("*").order("created_at", { ascending: false }),
         supabase.from("liabilities").select("*").order("created_at", { ascending: false }),
+        supabase.from("invoices").select("total").in("status", ["sent", "overdue"]),
+        supabase.from("payments").select("amount").eq("status", "pending"),
       ]);
       if (txnRes.error) {
         toast({
@@ -147,6 +151,20 @@ const Reports = () => {
       } else {
         setLiabilities((liabRes.data ?? []) as LiabilityRow[]);
       }
+      if (invRes.error) {
+        toast({ title: "Couldn't load receivables", description: invRes.error.message, variant: "destructive" });
+      } else {
+        setReceivablesTotal(
+          (invRes.data ?? []).reduce((s, r: { total: number | null }) => s + (Number(r.total) || 0), 0),
+        );
+      }
+      if (payRes.error) {
+        toast({ title: "Couldn't load payables", description: payRes.error.message, variant: "destructive" });
+      } else {
+        setPayablesTotal(
+          (payRes.data ?? []).reduce((s, r: { amount: number | null }) => s + (Number(r.amount) || 0), 0),
+        );
+      }
       setLoading(false);
     };
     load();
@@ -160,8 +178,8 @@ const Reports = () => {
   const pl = useMemo(() => profitAndLoss(periodTxns, companyType), [periodTxns, companyType]);
   const cf = useMemo(() => cashFlow(periodTxns), [periodTxns]);
   const bs = useMemo(
-    () => combinedBalanceSheet(allTxns, assets, liabilities, to),
-    [allTxns, assets, liabilities, to],
+    () => combinedBalanceSheet(allTxns, assets, liabilities, to, receivablesTotal, payablesTotal),
+    [allTxns, assets, liabilities, to, receivablesTotal, payablesTotal],
   );
   const sce = useMemo(() => changesInEquity(periodTxns, companyType), [periodTxns, companyType]);
 

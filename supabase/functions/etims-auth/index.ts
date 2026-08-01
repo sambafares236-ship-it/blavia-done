@@ -1,6 +1,7 @@
 // supabase/functions/etims-auth/index.ts
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { cleanKraPin, isValidKraPin } from "../_shared/kraTax.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -71,6 +72,13 @@ serve(async (req) => {
       });
     }
 
+    if (!isValidKraPin(config.kra_pin || "")) {
+      return new Response(
+        JSON.stringify({ error: "This business's KRA PIN doesn't look valid. Fix it in Settings before initializing eTIMS." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // If already initialized and CMC key exists, return it
     if (config.cmc_key && config.status === "active") {
       // Deliberately does not echo kra_pin / cmc_key — the client only needs
@@ -87,7 +95,7 @@ serve(async (req) => {
       : "https://etims-sbx.kra.go.ke/etims-api";
 
     const initPayload = {
-      tin: config.kra_pin,
+      tin: cleanKraPin(config.kra_pin),
       bhfId: config.branch_id || "00",
       dvcSrlNo: config.device_serial,
     };

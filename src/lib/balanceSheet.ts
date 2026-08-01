@@ -27,7 +27,8 @@ const isExpense = (t: Transaction) => (t.txn_type ?? "").toLowerCase() === "expe
 /**
  * Combined balance sheet:
  *   - Cash & equivalents derived from approved transactions up to `asOf`
- *   - Pending receivables / payables from `Pending Review` transactions
+ *   - Accounts receivable = total of outstanding invoices (sent/overdue)
+ *   - Accounts payable = total of outstanding bills (pending payments)
  *   - Manual asset & liability rows added on top
  */
 export const combinedBalanceSheet = (
@@ -35,6 +36,8 @@ export const combinedBalanceSheet = (
   assets: AssetRow[],
   liabilities: LiabilityRow[],
   asOf: Date,
+  receivablesTotal = 0,
+  payablesTotal = 0,
 ): ReportLine[] => {
   const upto = txns.filter((t) => {
     if (!isApproved(t)) return false;
@@ -48,17 +51,6 @@ export const combinedBalanceSheet = (
     .filter(isExpense)
     .reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
   const cash = totalIncome - totalExpense;
-
-  const pendingIncome = txns
-    .filter(
-      (t) => (t.status ?? "").toLowerCase() === "pending review" && isIncome(t),
-    )
-    .reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
-  const pendingExpense = txns
-    .filter(
-      (t) => (t.status ?? "").toLowerCase() === "pending review" && isExpense(t),
-    )
-    .reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
 
   // Group manual assets by category
   const assetsByCat: Record<string, number> = {};
@@ -75,21 +67,21 @@ export const combinedBalanceSheet = (
   });
   const manualLiabs = Object.values(liabsByCat).reduce((s, v) => s + v, 0);
 
-  const totalAssets = cash + pendingIncome + manualAssets;
-  const totalLiabilities = pendingExpense + manualLiabs;
+  const totalAssets = cash + receivablesTotal + manualAssets;
+  const totalLiabilities = payablesTotal + manualLiabs;
   const equity = totalAssets - totalLiabilities;
 
   return [
     { label: "Assets", value: 0, level: 0 },
     { label: "Cash & equivalents", value: cash, level: 2 },
-    { label: "Accounts receivable (pending)", value: pendingIncome, level: 2 },
+    { label: "Accounts receivable (outstanding invoices)", value: receivablesTotal, level: 2 },
     ...Object.entries(assetsByCat)
       .sort(([, a], [, b]) => b - a)
       .map(([k, v]) => ({ label: k, value: v, level: 2 as const })),
     { label: "Total Assets", value: totalAssets, level: 3, emphasis: true },
 
     { label: "Liabilities", value: 0, level: 0 },
-    { label: "Accounts payable (pending)", value: pendingExpense, level: 2 },
+    { label: "Accounts payable (outstanding bills)", value: payablesTotal, level: 2 },
     ...Object.entries(liabsByCat)
       .sort(([, a], [, b]) => b - a)
       .map(([k, v]) => ({ label: k, value: v, level: 2 as const })),
