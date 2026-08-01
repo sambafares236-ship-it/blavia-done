@@ -334,6 +334,7 @@ export const RunPayrollSection = () => {
           narration: `Payroll — ${approvalRun.run_period} (${data.success_count} employee${data.success_count === 1 ? "" : "s"})`,
           amount: -employerCost,
           category: "Payroll",
+          source_bank: "M-Pesa",
           txn_type: "Expense",
           status: "Approved",
         });
