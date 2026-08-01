@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/use-toast";
 import {
   VAT_RATE, codesForBusiness, defaultCodeFor, rateForCode, KRA_TAX_TYPES,
+  cleanKraPin, isValidKraPin,
 } from "@/lib/kraTax";
 import { Plus, Trash2, ArrowLeft, Save, Send, User, Check } from "lucide-react";
 
@@ -27,6 +28,7 @@ interface Contact {
   name: string;
   email: string;
   phone: string;
+  kra_pin: string | null;
 }
 
 /**
@@ -75,6 +77,7 @@ const CreateInvoice = () => {
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientPhone, setClientPhone] = useState("");
+  const [clientKraPin, setClientKraPin] = useState("");
   const [contactId, setContactId] = useState<string | null>(null); // matched contact
   const [matchedContact, setMatchedContact] = useState<Contact | null>(null);
   const [phoneSuggestions, setPhoneSuggestions] = useState<Contact[]>([]);
@@ -137,7 +140,7 @@ const CreateInvoice = () => {
       phoneTimer.current = setTimeout(async () => {
         const { data } = await supabase
           .from("contacts")
-          .select("id, name, email, phone")
+          .select("id, name, email, phone, kra_pin")
           .eq("business_id", businessId)
           .ilike("phone", `%${normalized}%`)
           .limit(5);
@@ -166,7 +169,7 @@ const CreateInvoice = () => {
       emailTimer.current = setTimeout(async () => {
         const { data } = await supabase
           .from("contacts")
-          .select("id, name, email, phone")
+          .select("id, name, email, phone, kra_pin")
           .eq("business_id", businessId)
           .ilike("email", `%${val}%`)
           .limit(5);
@@ -189,6 +192,7 @@ const CreateInvoice = () => {
     setClientName(c.name || "");
     setClientEmail(c.email || "");
     setClientPhone(c.phone || "");
+    setClientKraPin(c.kra_pin || "");
     setContactId(c.id);
     setMatchedContact(c);
     setShowPhoneSugg(false);
@@ -211,12 +215,20 @@ const CreateInvoice = () => {
   const resolveContact = async (): Promise<string | null> => {
     if (!clientName && !clientPhone && !clientEmail) return null;
 
-    // Already matched
-    if (contactId) return contactId;
+    const pin = clientKraPin ? cleanKraPin(clientKraPin) : null;
+
+    // Already matched — if the PIN was added or changed on this invoice,
+    // save it back to the contact so it's remembered next time.
+    if (contactId) {
+      if (pin && pin !== matchedContact?.kra_pin) {
+        await supabase.from("contacts").update({ kra_pin: pin }).eq("id", contactId);
+      }
+      return contactId;
+    }
 
     // Try to find existing by phone or email
     if (clientPhone || clientEmail) {
-      let query = supabase.from("contacts").select("id").eq("business_id", businessId);
+      let query = supabase.from("contacts").select("id, kra_pin").eq("business_id", businessId);
       if (clientPhone && clientEmail) {
         query = query.or(`phone.eq.${clientPhone},email.eq.${clientEmail}`);
       } else if (clientPhone) {
@@ -225,7 +237,12 @@ const CreateInvoice = () => {
         query = query.eq("email", clientEmail);
       }
       const { data } = await query.limit(1).single();
-      if (data) return data.id;
+      if (data) {
+        if (pin && pin !== data.kra_pin) {
+          await supabase.from("contacts").update({ kra_pin: pin }).eq("id", data.id);
+        }
+        return data.id;
+      }
     }
 
     // Create new contact
@@ -236,6 +253,7 @@ const CreateInvoice = () => {
         name: clientName || clientEmail || clientPhone,
         phone: clientPhone || null,
         email: clientEmail || null,
+        kra_pin: pin,
       })
       .select("id")
       .single();
@@ -245,6 +263,7 @@ const CreateInvoice = () => {
       return null;
     }
     return data.id;
+
   };
 
   // ── Save ──────────────────────────────────────────────────────────────────
@@ -259,6 +278,14 @@ const CreateInvoice = () => {
     }
     if (grandTotal <= 0) {
       toast({ title: "Invoice total must be greater than zero", variant: "destructive" });
+      return;
+    }
+    if (clientKraPin && !isValidKraPin(clientKraPin)) {
+      toast({
+        title: "Customer KRA PIN doesn't look right",
+        description: "It should be a letter, nine digits, then a letter (e.g. A123456789Z) — or leave it blank.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -442,12 +469,23 @@ const CreateInvoice = () => {
             </div>
           </div>
 
-          {vatRegistered && (
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Customer KRA PIN (optional — required for eTIMS)</Label>
-              <Input placeholder="A123456789Z" className="max-w-xs font-mono uppercase" />
-            </div>
-          )}
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">
+              Customer KRA PIN (optional — needed if they'll claim this as an expense or input VAT)
+            </Label>
+            <Input
+              placeholder="A123456789Z"
+              className="max-w-xs font-mono uppercase"
+              value={clientKraPin}
+              onChange={(e) => setClientKraPin(cleanKraPin(e.target.value))}
+              maxLength={11}
+            />
+            {clientKraPin && !isValidKraPin(clientKraPin) && (
+              <p className="text-xs text-destructive">
+                Doesn't look like a valid KRA PIN — should be a letter, nine digits, then a letter (e.g. A123456789Z).
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Invoice Details */}

@@ -19,7 +19,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { toast } from "@/components/ui/use-toast";
 import { BUSINESS_CATEGORIES } from "@/lib/taxRules";
-import type { EtimsMode } from "@/lib/kraTax";
+import { cleanKraPin, isValidKraPin, type EtimsMode } from "@/lib/kraTax";
 import { useNavigate } from "react-router-dom";
 
 const KENYA_COUNTIES = [
@@ -318,6 +318,14 @@ const Settings = () => {
       toast({ title: "KRA PIN required", variant: "destructive" });
       return;
     }
+    if (!isValidKraPin(kraPin)) {
+      toast({
+        title: "That KRA PIN doesn't look right",
+        description: "A KRA PIN is 11 characters — a letter, nine digits, then a letter (e.g. A123456789Z).",
+        variant: "destructive",
+      });
+      return;
+    }
     // Only the integrated route needs a device serial — eTIMS Lite users issue
     // on KRA's own channels and just record the result here.
     if (etimsMode === "oscu" && !deviceSerial) {
@@ -331,7 +339,7 @@ const Settings = () => {
     setEtimsSaving(true);
     const payload = {
       business_id: business.id,
-      kra_pin: kraPin.toUpperCase().trim(),
+      kra_pin: cleanKraPin(kraPin),
       branch_id: branchId.trim() || "00",
       device_serial: deviceSerial.trim() || null,
       environment,
@@ -675,7 +683,7 @@ const Settings = () => {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label htmlFor="kra_pin">KRA PIN</Label>
-                    <Input id="kra_pin" value={kraPin} onChange={(e) => setKraPin(e.target.value.toUpperCase())} placeholder="P000000000A" className="font-mono uppercase" />
+                    <Input id="kra_pin" value={kraPin} onChange={(e) => setKraPin(cleanKraPin(e.target.value))} placeholder="P000000000A" className="font-mono uppercase" maxLength={11} />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="branch_id">Branch ID</Label>

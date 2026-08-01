@@ -1,7 +1,7 @@
 // supabase/functions/etims-send-invoice/index.ts
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { KRA_BANDS, bandForCode, rateForCode, type KraBand } from "../_shared/kraTax.ts";
+import { KRA_BANDS, bandForCode, rateForCode, cleanKraPin, isValidKraPin, type KraBand } from "../_shared/kraTax.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -49,6 +49,17 @@ serve(async (req) => {
       );
     }
 
+    // A malformed seller TIN gets every invoice rejected by KRA one at a time —
+    // catch it here once, with a clear message, instead of KRA's opaque error.
+    if (!isValidKraPin(config.kra_pin || "")) {
+      return new Response(
+        JSON.stringify({
+          error: "This business's KRA PIN in eTIMS settings doesn't look valid. Fix it in Settings before sending invoices.",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // 2. Get invoice + items + contact (customer)
     const { data: invoice, error: invError } = await supabase
       .from("invoices")
@@ -65,6 +76,18 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: "Invoice not found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // A stored buyer PIN should already be clean (the UI validates on entry),
+    // but this is the last checkpoint before it's sent to KRA — refuse rather
+    // than transmit something malformed and get an opaque KRA rejection.
+    if (invoice.contacts?.kra_pin && !isValidKraPin(invoice.contacts.kra_pin)) {
+      return new Response(
+        JSON.stringify({
+          error: "This invoice's customer KRA PIN doesn't look valid. Fix it on the invoice before sending.",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -107,7 +130,7 @@ serve(async (req) => {
     // exempt lines on mixed invoices and made a non-VAT invoice incoherent —
     // a 16% band carrying zero tax.
     const bandTotals: Record<KraBand, { taxbl: number; tax: number }> =
-      Object.fromEntries(KRA_BANDS.map((b) => [b, { taxbl: 0, tax: 0 }])) as Record<
+      Object.fromEntries(KRA_BANDS.map((b) => [b, { taxbl: 0, tax: 0 }])) as Record
         KraBand,
         { taxbl: number; tax: number }
       >;
@@ -127,13 +150,13 @@ serve(async (req) => {
     const totTaxAmt = round2(KRA_BANDS.reduce((s, b) => s + bandTotals[b].tax, 0));
 
     const kraInvoice = {
-      tin: config.kra_pin,
+      tin: cleanKraPin(config.kra_pin),
       bhfId: config.branch_id || "00",
       orgInvcNo: 0,
       cisInvcNo: invoice.invoice_number,
       // Buyer's KRA PIN. Captured on the contact and required for the buyer to
       // claim the expense; null for genuine walk-in B2C sales.
-      custTin: invoice.contacts?.kra_pin || null,
+      custTin: invoice.contacts?.kra_pin ? cleanKraPin(invoice.contacts.kra_pin) : null,
       custNm: invoice.contacts?.name || "Retail Customer",
       rcptTyCd: "S",   // S = Sale
       pmtTyCd: pmtCodeMap[invoice.payment_method] || "01",
@@ -163,9 +186,9 @@ serve(async (req) => {
       totAmt: invoice.total,
       prchrAcptcYn: "N",
       remark: invoice.notes || null,
-      regrId: config.kra_pin,
+      regrId: cleanKraPin(config.kra_pin),
       regrNm: business?.business_name || "Business",
-      modrId: config.kra_pin,
+      modrId: cleanKraPin(config.kra_pin),
       modrNm: business?.business_name || "Business",
       itemList: (invoice.invoice_items || []).map((item: any, index: number) => {
         const unitPrice = Number(item.unit_price) || 0;
@@ -177,7 +200,7 @@ serve(async (req) => {
         return {
           itemSeq: index + 1,
           itemCd: item.id, // use item UUID as item code
-          itemClsCd: "5020230602", // default class code � general goods
+          itemClsCd: "5020230602", // default class code - general goods
           itemNm: item.description,
           bcd: null,
           pkgUnitCd: "NT",
@@ -212,7 +235,7 @@ serve(async (req) => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "tin": config.kra_pin,
+          "tin": cleanKraPin(config.kra_pin),
           "bhfId": config.branch_id || "00",
           "cmcKey": config.cmc_key,
         },

@@ -33,3 +33,14 @@ export const bandForCode = (code: string | null | undefined): KraBand => {
   const match = KRA_BANDS.find((b) => b === code);
   return match ?? (NON_VAT_CODE as KraBand);
 };
+
+/** KRA PINs are 11 characters: a letter, nine digits, then a letter (e.g. A123456789Z). */
+const KRA_PIN_PATTERN = /^[A-Z]\d{9}[A-Z]$/;
+
+/** Strips whitespace and any non-alphanumeric characters, and uppercases. */
+export const cleanKraPin = (raw: string): string =>
+  raw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+
+/** True if a (cleaned) KRA PIN matches KRA's standard 11-character format. */
+export const isValidKraPin = (raw: string): boolean =>
+  KRA_PIN_PATTERN.test(cleanKraPin(raw));

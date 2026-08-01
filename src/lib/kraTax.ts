@@ -72,3 +72,14 @@ export const defaultCodeFor = (vatRegistered: boolean): string =>
 
 /** How a business issues eTIMS invoices. Mirrors etims_configs.mode. */
 export type EtimsMode = "none" | "oscu" | "lite";
+
+/** KRA PINs are 11 characters: a letter, nine digits, then a letter (e.g. A123456789Z). */
+const KRA_PIN_PATTERN = /^[A-Z]\d{9}[A-Z]$/;
+
+/** Strips whitespace and any non-alphanumeric characters, and uppercases. */
+export const cleanKraPin = (raw: string): string =>
+  raw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+
+/** True if a (cleaned) KRA PIN matches KRA's standard 11-character format. */
+export const isValidKraPin = (raw: string): boolean =>
+  KRA_PIN_PATTERN.test(cleanKraPin(raw));
