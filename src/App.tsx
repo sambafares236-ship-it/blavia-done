@@ -20,6 +20,7 @@ import BalanceSheet from "./pages/BalanceSheet.tsx";
 import ScheduledExpenses from "./pages/ScheduledExpenses.tsx";
 import Settings from "./pages/Settings.tsx";
 import MpesaSettings from "./pages/MpesaSettings.tsx";
+import EmailSettings from "./pages/EmailSettings.tsx";
 import Invoices from "./pages/Invoices.tsx";
 import Receivables from "./pages/Receivables.tsx";
 import Payables from "./pages/Payables.tsx";
@@ -59,6 +60,7 @@ const App = () => (
             <Route path="/scheduled-expenses" element={<ProtectedRoute><ScheduledExpenses /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/mpesa-settings" element={<ProtectedRoute><MpesaSettings /></ProtectedRoute>} />
+            <Route path="/email-settings" element={<ProtectedRoute><EmailSettings /></ProtectedRoute>} />
 
             {/* Invoice Routes */}
             <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />

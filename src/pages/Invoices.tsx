@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 import {
   Plus, FileText, Search, Eye, Send,
-  CheckCircle, XCircle, AlertCircle,
+  CheckCircle, XCircle, AlertCircle, Mail,
 } from "lucide-react";
 
 type Tables = Database["public"]["Tables"];
@@ -16,7 +16,7 @@ type Tables = Database["public"]["Tables"];
 /** Projected off the generated schema so it cannot drift from the database. */
 type Invoice = Pick<
   Tables["invoices"]["Row"],
-  "id" | "invoice_number" | "status" | "issue_date" | "due_date" | "total" | "currency"
+  "id" | "invoice_number" | "status" | "issue_date" | "due_date" | "total" | "currency" | "needs_review" | "source"
 > & { contacts: Pick<Tables["contacts"]["Row"], "name" | "email"> | null };
 
 interface Business {
@@ -68,7 +68,7 @@ const Invoices = () => {
     setLoading(true);
     let query = supabase
       .from("invoices")
-      .select(`id, invoice_number, status, issue_date, due_date, total, currency, contacts (name, email)`)
+      .select(`id, invoice_number, status, issue_date, due_date, total, currency, needs_review, source, contacts (name, email)`)
       .eq("business_id", businessId)
       .order("created_at", { ascending: false });
     if (statusFilter !== "all") query = query.eq("status", statusFilter);
@@ -213,6 +213,15 @@ const Invoices = () => {
                     <tr key={invoice.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3">
                         <span className="font-medium text-sm">{invoice.invoice_number}</span>
+                        {invoice.needs_review && (
+                          <span
+                            className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700"
+                            title="Auto-imported from an email — details haven't been confirmed yet"
+                          >
+                            <Mail className="h-2.5 w-2.5" />
+                            Needs review
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <p className="text-sm font-medium">{invoice.contacts?.name || "—"}</p>

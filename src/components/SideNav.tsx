@@ -4,7 +4,7 @@ import {
   House, Gauge, Wallet, Users, FileBarChart2,
   Scale, PieChart, Sparkles, Settings, LogOut, ArrowUpRight,
   CalendarClock, Landmark, FileText, X, Smartphone, Hourglass, Receipt,
-  Calculator, ChevronDown, type LucideIcon,
+  Calculator, ChevronDown, Mail, type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/blavia-logo.png";
@@ -38,6 +38,7 @@ const links: NavEntry[] = [
   { to: "/reports", label: "Financial Reports", icon: FileBarChart2 },
   { to: "/analytics", label: "Analytics", icon: PieChart },
   { to: "/mpesa-settings", label: "M-Pesa Setup", icon: Smartphone },
+  { to: "/email-settings", label: "Email Setup", icon: Mail },
 ];
 
 const storageKey = (group: string) => `blavia.sidenav.${group}`;
@@ -151,8 +152,8 @@ export const SideNav = ({ open = false, onClose, onOpenChat }: SideNavProps) => 
         "md:static md:z-auto md:flex md:w-60 md:max-w-none md:translate-x-0 md:shrink-0"
       )}>
         {/* Logo */}
-        <div className="relative flex w-full shrink-0 items-center justify-center px-5 py-4">
-          <img src={logo} alt="BLAVIA" className="h-20 w-auto object-contain" />
+        <div className="relative w-full overflow-hidden shrink-0">
+          <img src={logo} alt="BLAVIA" className="w-full object-cover" style={{ height: "100px" }} />
           <button
             onClick={onClose}
             aria-label="Close menu"

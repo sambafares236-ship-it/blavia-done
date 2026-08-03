@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Link2, Loader2, X } from "lucide-react";
+import { AlertTriangle, Link2, Loader2, X, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -14,12 +14,18 @@ import { toast } from "@/components/ui/use-toast";
 const fmtKES = (n: number) =>
   "KES " + new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(n ?? 0);
 
-// Safaricom sends TransTime as "yyyyMMddHHmmss"
+// Safaricom sends TransTime as "yyyyMMddHHmmss"; email-sourced rows store
+// a plain ISO timestamp instead (see inbound-email edge function).
 const fmtTransTime = (t: string | null) => {
-  if (!t || t.length !== 14) return t || "—";
-  const y = t.slice(0, 4), mo = t.slice(4, 6), d = t.slice(6, 8);
-  const h = t.slice(8, 10), mi = t.slice(10, 12);
-  return `${d}/${mo}/${y} ${h}:${mi}`;
+  if (!t) return "—";
+  if (t.length === 14) {
+    const y = t.slice(0, 4), mo = t.slice(4, 6), d = t.slice(6, 8);
+    const h = t.slice(8, 10), mi = t.slice(10, 12);
+    return `${d}/${mo}/${y} ${h}:${mi}`;
+  }
+  const d = new Date(t);
+  if (!isNaN(d.getTime())) return d.toLocaleString("en-KE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return t;
 };
 
 interface PendingMatch {
@@ -31,6 +37,7 @@ interface PendingMatch {
   trans_time: string | null;
   bill_ref_number: string | null;
   transaction_type: string | null;
+  source: string;
 }
 
 interface UnpaidInvoice {
@@ -57,7 +64,7 @@ export const UnmatchedPaymentsSection = ({ businessId, onMatched }: Props) => {
     setLoading(true);
     const { data, error } = await supabase
       .from("pending_matches")
-      .select("id, trans_id, trans_amount, msisdn, first_name, trans_time, bill_ref_number, transaction_type")
+      .select("id, trans_id, trans_amount, msisdn, first_name, trans_time, bill_ref_number, transaction_type, source")
       .eq("business_id", businessId)
       .eq("match_status", "pending")
       .order("created_at", { ascending: false });
@@ -166,15 +173,30 @@ export const UnmatchedPaymentsSection = ({ businessId, onMatched }: Props) => {
                 className="rounded-lg bg-white border border-amber-200 p-4 flex items-center justify-between gap-4"
               >
                 <div className="min-w-0">
-                  <p className="font-medium text-sm">{fmtKES(item.trans_amount)}</p>
+                  <p className="font-medium text-sm flex items-center gap-2">
+                    {fmtKES(item.trans_amount)}
+                    {item.source === "email" && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                        <Mail className="h-2.5 w-2.5" />
+                        via Email
+                      </span>
+                    )}
+                  </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {item.msisdn || "Unknown number"}
-                    {item.first_name ? ` · ${item.first_name}` : ""}
+                    {item.source === "email"
+                      ? item.first_name || "Unknown sender"
+                      : `${item.msisdn || "Unknown number"}${item.first_name ? ` · ${item.first_name}` : ""}`}
                     {" · "}
-                    {item.bill_ref_number ? `Paybill (ref: ${item.bill_ref_number})` : "Till"}
+                    {item.source === "email"
+                      ? item.bill_ref_number
+                        ? `Ref: ${item.bill_ref_number}`
+                        : "No reference found"
+                      : item.bill_ref_number
+                        ? `Paybill (ref: ${item.bill_ref_number})`
+                        : "Till"}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {fmtTransTime(item.trans_time)} · Receipt {item.trans_id}
+                    {fmtTransTime(item.trans_time)} · {item.source === "email" ? "Message" : "Receipt"} {item.trans_id}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
