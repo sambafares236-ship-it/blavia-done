@@ -372,6 +372,38 @@ export type Database = {
         }
         Relationships: []
       }
+      business_inbound_emails: {
+        Row: {
+          alias: string
+          business_id: string
+          created_at: string
+          forwarding_verified: boolean
+          id: string
+        }
+        Insert: {
+          alias: string
+          business_id: string
+          created_at?: string
+          forwarding_verified?: boolean
+          id?: string
+        }
+        Update: {
+          alias?: string
+          business_id?: string
+          created_at?: string
+          forwarding_verified?: boolean
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "business_inbound_emails_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: true
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cashflow_forecasts: {
         Row: {
           actual_expenses: number | null
@@ -868,6 +900,79 @@ export type Database = {
         }
         Relationships: []
       }
+      inbound_emails: {
+        Row: {
+          attachment_filename: string | null
+          attachment_url: string | null
+          body_snippet: string | null
+          business_id: string | null
+          classification: string
+          created_at: string
+          from_email: string | null
+          id: string
+          invoice_id: string | null
+          pending_match_id: string | null
+          provider_message_id: string
+          received_at: string | null
+          subject: string | null
+          to_email: string | null
+        }
+        Insert: {
+          attachment_filename?: string | null
+          attachment_url?: string | null
+          body_snippet?: string | null
+          business_id?: string | null
+          classification?: string
+          created_at?: string
+          from_email?: string | null
+          id?: string
+          invoice_id?: string | null
+          pending_match_id?: string | null
+          provider_message_id: string
+          received_at?: string | null
+          subject?: string | null
+          to_email?: string | null
+        }
+        Update: {
+          attachment_filename?: string | null
+          attachment_url?: string | null
+          body_snippet?: string | null
+          business_id?: string | null
+          classification?: string
+          created_at?: string
+          from_email?: string | null
+          id?: string
+          invoice_id?: string | null
+          pending_match_id?: string | null
+          provider_message_id?: string
+          received_at?: string | null
+          subject?: string | null
+          to_email?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inbound_emails_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inbound_emails_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inbound_emails_pending_match_id_fkey"
+            columns: ["pending_match_id"]
+            isOneToOne: false
+            referencedRelation: "pending_matches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoice_items: {
         Row: {
           business_id: string | null
@@ -1008,11 +1113,13 @@ export type Database = {
           issue_date: string | null
           last_reminder_sent_at: string | null
           mpesa_reference: string | null
+          needs_review: boolean
           notes: string | null
           paid_at: string | null
           payment_description: string | null
           payment_method: string | null
           sent_at: string | null
+          source: string
           status: string | null
           subtotal: number | null
           total: number | null
@@ -1038,11 +1145,13 @@ export type Database = {
           issue_date?: string | null
           last_reminder_sent_at?: string | null
           mpesa_reference?: string | null
+          needs_review?: boolean
           notes?: string | null
           paid_at?: string | null
           payment_description?: string | null
           payment_method?: string | null
           sent_at?: string | null
+          source?: string
           status?: string | null
           subtotal?: number | null
           total?: number | null
@@ -1068,11 +1177,13 @@ export type Database = {
           issue_date?: string | null
           last_reminder_sent_at?: string | null
           mpesa_reference?: string | null
+          needs_review?: boolean
           notes?: string | null
           paid_at?: string | null
           payment_description?: string | null
           payment_method?: string | null
           sent_at?: string | null
+          source?: string
           status?: string | null
           subtotal?: number | null
           total?: number | null
@@ -1665,6 +1776,7 @@ export type Database = {
           match_status: string
           matched_invoice_id: string | null
           msisdn: string | null
+          source: string
           trans_amount: number
           trans_id: string
           trans_time: string | null
@@ -1679,6 +1791,7 @@ export type Database = {
           match_status?: string
           matched_invoice_id?: string | null
           msisdn?: string | null
+          source?: string
           trans_amount: number
           trans_id: string
           trans_time?: string | null
@@ -1693,6 +1806,7 @@ export type Database = {
           match_status?: string
           matched_invoice_id?: string | null
           msisdn?: string | null
+          source?: string
           trans_amount?: number
           trans_id?: string
           trans_time?: string | null

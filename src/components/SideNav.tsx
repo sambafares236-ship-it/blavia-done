@@ -151,8 +151,8 @@ export const SideNav = ({ open = false, onClose, onOpenChat }: SideNavProps) => 
         "md:static md:z-auto md:flex md:w-60 md:max-w-none md:translate-x-0 md:shrink-0"
       )}>
         {/* Logo */}
-        <div className="relative w-full overflow-hidden shrink-0">
-          <img src={logo} alt="BLAVIA" className="w-full object-cover" style={{ height: "100px" }} />
+        <div className="relative flex w-full shrink-0 items-center justify-center px-5 py-4">
+          <img src={logo} alt="BLAVIA" className="h-20 w-auto object-contain" />
           <button
             onClick={onClose}
             aria-label="Close menu"
