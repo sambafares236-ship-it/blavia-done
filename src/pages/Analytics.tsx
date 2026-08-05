@@ -136,9 +136,8 @@ export default function Analytics() {
   const insights = useMemo(() => generateInsights(rows, budgets, forecast, summary), [rows, budgets, forecast, summary]);
 
   const combinedChartData = useMemo(() => {
-    const past = daily.slice(-30).map((d) => ({
+    const past = daily.slice(-horizon).map((d) => ({
       date: d.date, net: d.net,
-      forecast: null as number | null,
       balance: null as number | null,
     }));
     let runBal = openingBalance;
@@ -146,12 +145,8 @@ export default function Analytics() {
       past[i].balance = runBal;
       runBal -= past[i].net;
     }
-    const fc = forecast.map((f) => ({
-      date: f.date, net: null as number | null,
-      forecast: f.forecastNet, balance: f.forecastBalance,
-    }));
-    return [...past, ...fc];
-  }, [daily, forecast, openingBalance]);
+    return past;
+  }, [daily, horizon, openingBalance]);
 
   const exportSnapshot = () => {
     const out = daily.map((d) => ({ date: d.date, income: d.income, expenses: d.expenses, net: d.net }));
@@ -428,7 +423,7 @@ export default function Analytics() {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
               <LineIcon className="h-4 w-4 text-shield" />
-              Cashflow & {horizon}-day forecast
+              Cashflow ({horizon} days)
             </CardTitle>
             <div className="flex items-center gap-2">
               <Tabs value={String(horizon)} onValueChange={(v) => setHorizon(Number(v) as Horizon)}>
@@ -463,9 +458,8 @@ export default function Analytics() {
                     <YAxis tickFormatter={(v) => fmtKshCompact(Number(v))} tick={{ fontSize: 11 }} width={70} />
                     <Tooltip formatter={(v: any) => fmtKsh(Number(v))} labelFormatter={(d) => format(parseISO(d as string), "EEE, d MMM yyyy")} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Area type="monotone" dataKey="balance" name="Projected balance" stroke="hsl(209 60% 45%)" fill="url(#balGrad)" strokeWidth={2} />
-                    <Line type="monotone" dataKey="net" name="Daily net (actual)" stroke="hsl(213 52% 25%)" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="forecast" name="Daily net (forecast)" stroke="hsl(38 92% 50%)" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                    <Area type="monotone" dataKey="balance" name="Balance" stroke="hsl(209 60% 45%)" fill="url(#balGrad)" strokeWidth={2} />
+                    <Line type="monotone" dataKey="net" name="Daily net" stroke="hsl(213 52% 25%)" strokeWidth={2} dot={false} />
                   </AreaChart>
                 </ResponsiveContainer>
               )}
