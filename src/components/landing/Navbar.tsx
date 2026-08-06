@@ -41,10 +41,7 @@ export const Navbar = () => {
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4 md:px-10">
         <a href="#home" className="flex items-center gap-2.5">
-          <img src={logo} alt="BLAVIA" className="h-7 w-auto" />
-          <span className="text-base font-bold tracking-tight" style={{ color: BRAND }}>
-            BLAVIA
-          </span>
+          <img src={logo} alt="BLAVIA" className="h-9 w-auto" />
         </a>
 
         {/* Desktop links */}
