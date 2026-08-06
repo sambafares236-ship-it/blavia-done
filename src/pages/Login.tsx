@@ -1,9 +1,15 @@
 ﻿import { useState } from "react";
 import { Link, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { loginStep1, loginStep2 } from "@/lib/authFlow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "@/components/ui/input-otp";
 import { toast } from "@/components/ui/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Eye, EyeOff } from "lucide-react";
@@ -27,6 +33,12 @@ const Login = () => {
   const [forgotEmail, setForgotEmail] = useState("");
   const [sendingReset, setSendingReset] = useState(false);
 
+  // ── New: email-code verification step ──────────────────────
+  const [step, setStep] = useState<"password" | "verify">("password");
+  const [otp, setOtp] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [resending, setResending] = useState(false);
+
   if (!loading && user) {
     return <Navigate to={from === "/" ? "/home" : from} replace />;
   }
@@ -35,27 +47,47 @@ const Login = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        let msg = "Invalid email or password. Please try again.";
-        if (error.message.toLowerCase().includes("email not confirmed"))
-          msg = "Please confirm your email address first.";
-        if (error.message.toLowerCase().includes("too many"))
-          msg = "Too many attempts. Please wait a moment and try again.";
-        toast({ title: "Sign in failed", description: msg, variant: "destructive" });
-        return;
-      }
+      await loginStep1(email, password);
+      toast({
+        title: "Check your email",
+        description: `We sent a verification code to ${email}.`,
+      });
+      setStep("verify");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Please try again.";
+      toast({ title: "Sign in failed", description: msg, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otp.length < 6) return;
+    setVerifying(true);
+    try {
+      await loginStep2(email, otp);
       toast({ title: "Welcome back!" });
       navigate(from === "/" ? "/home" : from, { replace: true });
     } catch (err) {
-      console.error("Login exception:", err);
-      toast({
-        title: "Error",
-        description: "An unexpected error occurred. Please try again.",
-        variant: "destructive",
-      });
+      const msg = err instanceof Error ? err.message : "Invalid or expired code.";
+      toast({ title: "Verification failed", description: msg, variant: "destructive" });
+      setOtp("");
     } finally {
-      setSubmitting(false);
+      setVerifying(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setResending(true);
+    try {
+      await loginStep1(email, password);
+      toast({ title: "Code resent", description: `Check ${email} again.` });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not resend code.";
+      toast({ title: "Error", description: msg, variant: "destructive" });
+    } finally {
+      setResending(false);
     }
   };
 
@@ -95,14 +127,67 @@ const Login = () => {
         <div className="flex flex-col items-center gap-3">
           <img src={logo} alt="BLAVIA" className="h-14 w-auto" />
           <h1 className="text-2xl font-bold tracking-tight text-white">
-            Sign in to BLAVIA
+            {step === "verify" ? "Check your email" : "Sign in to BLAVIA"}
           </h1>
           <p className="text-sm text-white/70">
-            Welcome back. Enter your credentials.
+            {step === "verify"
+              ? `Enter the code we sent to ${email}`
+              : "Welcome back. Enter your credentials."}
           </p>
         </div>
 
-        {!showForgot ? (
+        {step === "verify" ? (
+          // ── Email Code Verification ─────────────────────────
+          <form
+            onSubmit={handleVerify}
+            className="space-y-4 rounded-xl border bg-white p-6 shadow-xl"
+            style={{ borderColor: `${BRAND}20` }}
+          >
+            <div className="flex justify-center py-2">
+              <InputOTP maxLength={6} value={otp} onChange={setOtp}>
+                <InputOTPGroup>
+                  <InputOTPSlot index={0} />
+                  <InputOTPSlot index={1} />
+                  <InputOTPSlot index={2} />
+                  <InputOTPSlot index={3} />
+                  <InputOTPSlot index={4} />
+                  <InputOTPSlot index={5} />
+                </InputOTPGroup>
+              </InputOTP>
+            </div>
+
+            <Button
+              type="submit"
+              className="w-full text-white hover:opacity-90"
+              style={{ background: BRAND }}
+              disabled={verifying || otp.length < 6}
+            >
+              {verifying ? "Verifying…" : "Verify & Sign in"}
+            </Button>
+
+            <div className="flex items-center justify-between text-sm">
+              <button
+                type="button"
+                onClick={() => {
+                  setStep("password");
+                  setOtp("");
+                }}
+                className="text-muted-foreground hover:underline"
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={resending}
+                className="hover:underline"
+                style={{ color: BRAND }}
+              >
+                {resending ? "Resending…" : "Resend code"}
+              </button>
+            </div>
+          </form>
+        ) : !showForgot ? (
           // ── Login Form ──────────────────────────────────────
           <form
             onSubmit={handleSubmit}
